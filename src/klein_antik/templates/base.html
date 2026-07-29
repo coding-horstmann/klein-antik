@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}klein antik{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="{{ url_for('references') }}">klein antik</a>
+    <nav class="main-nav" aria-label="Hauptnavigation">
+      <a class="{{ 'active' if active_tab == 'deals' else '' }}" href="{{ url_for('deals') }}">
+        Deals
+      </a>
+      <a class="{{ 'active' if active_tab in ('references', 'queries') else '' }}" href="{{ url_for('references') }}">
+        Referenzen
+      </a>
+      <a class="{{ 'active' if active_tab == 'runs' else '' }}" href="{{ url_for('runs') }}">
+        Läufe
+      </a>
+      <a class="{{ 'active' if active_tab == 'image_review' else '' }}" href="{{ url_for('image_review') }}">
+        Bild prüfen
+      </a>
+    </nav>
+  </header>
+  <main class="page-shell">
+    {% block content %}{% endblock %}
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
+

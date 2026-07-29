@@ -1,0 +1,501 @@
+from __future__ import annotations
+
+import hmac
+import os
+import time
+from datetime import datetime, timezone
+from decimal import Decimal
+from functools import wraps
+from typing import Any, Callable
+
+from flask import Flask, jsonify, redirect, render_template, request, url_for
+
+from .catalog import EXPECTED_QUERY_COUNT, category_options
+from .db import connection, init_schema
+
+
+CONTENT_STATUSES = {
+    "unreviewed": "Ungeprüft",
+    "usable": "Brauchbar",
+    "unclear": "Unklar",
+    "unusable": "Unbrauchbar",
+}
+USE_STATUSES = {
+    "price_image": "Preis und Bild",
+    "price_only": "Nur Preis",
+    "image_only": "Nur Bild",
+    "do_not_use": "Nicht verwenden",
+}
+QUERY_STATUSES = {
+    "unreviewed": "Ungeprüft",
+    "good": "Gut",
+    "refine": "Nachbessern",
+    "discard": "Verwerfen",
+}
+REVIEW_TAGS = {
+    "reproduction": "Reproduktion",
+    "lot": "Konvolut",
+    "damaged": "Beschädigt",
+    "wrong_category": "Falsche Kategorie",
+    "bad_image": "Schlechtes Foto",
+    "price_missing": "Preis fehlt",
+}
+RUN_LABELS = {
+    "queued": "Wartet",
+    "running": "Läuft",
+    "completed": "Abgeschlossen",
+    "completed_with_errors": "Mit Fehlern beendet",
+    "blocked": "Blockiert",
+    "cancel_requested": "Stopp angefordert",
+    "cancelled": "Abgebrochen",
+    "failed": "Fehlgeschlagen",
+}
+
+
+def init_with_retry() -> None:
+    last_error: Exception | None = None
+    for attempt in range(20):
+        try:
+            init_schema()
+            return
+        except Exception as exc:  # Postgres can still be starting during deployment
+            last_error = exc
+            if attempt == 19:
+                raise
+            time.sleep(2)
+    if last_error:
+        raise last_error
+
+
+def create_app() -> Flask:
+    app = Flask(__name__)
+    app.config["JSON_AS_ASCII"] = False
+    init_with_retry()
+
+    @app.before_request
+    def require_auth() -> Any:
+        if request.path == "/health":
+            return None
+        username = os.environ.get("DASHBOARD_USER", "niklas")
+        password = os.environ.get("DASHBOARD_PASSWORD", "")
+        if not password:
+            return ("DASHBOARD_PASSWORD fehlt.", 503)
+        auth = request.authorization
+        if (
+            not auth
+            or not hmac.compare_digest(auth.username or "", username)
+            or not hmac.compare_digest(auth.password or "", password)
+        ):
+            return (
+                "Anmeldung erforderlich.",
+                401,
+                {"WWW-Authenticate": 'Basic realm="klein antik"'},
+            )
+        return None
+
+    @app.context_processor
+    def template_globals() -> dict[str, Any]:
+        return {
+            "content_statuses": CONTENT_STATUSES,
+            "use_statuses": USE_STATUSES,
+            "query_statuses": QUERY_STATUSES,
+            "review_tags": REVIEW_TAGS,
+            "run_labels": RUN_LABELS,
+            "categories": category_options(),
+            "format_money": format_money,
+            "format_time": format_time,
+        }
+
+    @app.get("/health")
+    def health() -> Any:
+        try:
+            with connection() as conn:
+                conn.execute("SELECT 1").fetchone()
+            return jsonify({"status": "ok"})
+        except Exception as exc:
+            return jsonify({"status": "error", "error": str(exc)[:200]}), 503
+
+    @app.get("/")
+    def index() -> Any:
+        return redirect(url_for("references"))
+
+    @app.get("/references")
+    def references() -> Any:
+        category = request.args.get("category", "").strip()
+        content_status = request.args.get("status", "").strip()
+        use_status = request.args.get("use", "").strip()
+        search = request.args.get("q", "").strip()
+        page = max(1, min(10000, request.args.get("page", 1, type=int)))
+        page_size = 36
+        where = ["TRUE"]
+        params: list[Any] = []
+
+        if category:
+            where.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM listing_query_matches fqm
+                    JOIN search_queries fq ON fq.id = fqm.query_id
+                    WHERE fqm.listing_id = l.id AND fq.category = %s
+                )
+                """
+            )
+            params.append(category)
+        if content_status in CONTENT_STATUSES:
+            where.append("COALESCE(r.content_status, 'unreviewed') = %s")
+            params.append(content_status)
+        if use_status in USE_STATUSES:
+            where.append("COALESCE(r.use_status, 'price_image') = %s")
+            params.append(use_status)
+        if search:
+            where.append("(l.title ILIKE %s OR l.product_id ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%"])
+
+        where_sql = " AND ".join(where)
+        with connection() as conn:
+            total_row = conn.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM reference_listings l
+                LEFT JOIN listing_reviews r ON r.listing_id = l.id
+                WHERE {where_sql}
+                """,
+                params,
+            ).fetchone()
+            rows = conn.execute(
+                f"""
+                SELECT
+                    l.*,
+                    COALESCE(r.content_status, 'unreviewed') AS content_status,
+                    COALESCE(r.use_status, 'price_image') AS use_status,
+                    COALESCE(r.tags, ARRAY[]::TEXT[]) AS tags,
+                    COALESCE(r.note, '') AS note,
+                    r.updated_at AS review_updated_at,
+                    array_agg(DISTINCT q.query_text ORDER BY q.query_text) AS query_texts,
+                    array_agg(DISTINCT q.category ORDER BY q.category) AS category_ids
+                FROM reference_listings l
+                LEFT JOIN listing_reviews r ON r.listing_id = l.id
+                JOIN listing_query_matches qm ON qm.listing_id = l.id
+                JOIN search_queries q ON q.id = qm.query_id
+                WHERE {where_sql}
+                GROUP BY l.id, r.listing_id, r.content_status, r.use_status, r.tags, r.note, r.updated_at
+                ORDER BY l.last_seen_at DESC, l.id DESC
+                LIMIT %s OFFSET %s
+                """,
+                [*params, page_size, (page - 1) * page_size],
+            ).fetchall()
+            stats = reference_stats(conn)
+
+        total = int(total_row["count"]) if total_row else 0
+        return render_template(
+            "references.html",
+            active_tab="references",
+            listings=[dict(row) for row in rows],
+            stats=stats,
+            total=total,
+            page=page,
+            pages=max(1, (total + page_size - 1) // page_size),
+            filters={
+                "category": category,
+                "status": content_status,
+                "use": use_status,
+                "q": search,
+            },
+        )
+
+    @app.get("/queries")
+    def queries() -> Any:
+        category = request.args.get("category", "").strip()
+        where = "WHERE q.category = %s" if category else ""
+        params = [category] if category else []
+        with connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT
+                    q.*,
+                    COUNT(DISTINCT qm.listing_id) AS listing_count,
+                    COUNT(DISTINCT qm.listing_id) FILTER (
+                        WHERE COALESCE(r.content_status, 'unreviewed') = 'usable'
+                    ) AS usable_count,
+                    COUNT(DISTINCT qm.listing_id) FILTER (
+                        WHERE COALESCE(r.content_status, 'unreviewed') = 'unclear'
+                    ) AS unclear_count,
+                    COUNT(DISTINCT qm.listing_id) FILTER (
+                        WHERE COALESCE(r.content_status, 'unreviewed') = 'unusable'
+                    ) AS unusable_count,
+                    MIN(l.price_value) AS min_price,
+                    percentile_cont(0.5) WITHIN GROUP (ORDER BY l.price_value)
+                        FILTER (WHERE l.price_value IS NOT NULL) AS median_price,
+                    MAX(l.price_value) AS max_price
+                FROM search_queries q
+                LEFT JOIN listing_query_matches qm ON qm.query_id = q.id
+                LEFT JOIN reference_listings l ON l.id = qm.listing_id
+                LEFT JOIN listing_reviews r ON r.listing_id = l.id
+                {where}
+                GROUP BY q.id
+                ORDER BY q.position
+                """,
+                params,
+            ).fetchall()
+        return render_template(
+            "queries.html",
+            active_tab="queries",
+            queries=[dict(row) for row in rows],
+            selected_category=category,
+        )
+
+    @app.get("/runs")
+    def runs() -> Any:
+        with connection() as conn:
+            run_rows = conn.execute(
+                """
+                SELECT *
+                FROM reference_runs
+                ORDER BY id DESC
+                LIMIT 30
+                """
+            ).fetchall()
+            worker = conn.execute(
+                """
+                SELECT *,
+                    last_seen_at > now() - interval '90 seconds' AS online
+                FROM worker_status
+                WHERE name = 'reference-importer'
+                """
+            ).fetchone()
+            failed_queries = conn.execute(
+                """
+                SELECT rq.run_id, q.query_text, rq.error
+                FROM reference_run_queries rq
+                JOIN search_queries q ON q.id = rq.query_id
+                WHERE rq.status = 'failed'
+                ORDER BY rq.id DESC
+                LIMIT 20
+                """
+            ).fetchall()
+        return render_template(
+            "runs.html",
+            active_tab="runs",
+            runs=[dict(row) for row in run_rows],
+            worker=dict(worker) if worker else None,
+            failed_queries=[dict(row) for row in failed_queries],
+            expected_calls=EXPECTED_QUERY_COUNT,
+        )
+
+    @app.get("/deals")
+    def deals() -> Any:
+        return render_template(
+            "empty.html",
+            active_tab="deals",
+            title="Deals",
+            empty_text="Noch keine Deals vorhanden.",
+        )
+
+    @app.get("/image-review")
+    def image_review() -> Any:
+        return render_template(
+            "empty.html",
+            active_tab="image_review",
+            title="Bild prüfen",
+            empty_text="Noch keine Bildvergleiche vorhanden.",
+        )
+
+    @app.post("/api/listings/<int:listing_id>/review")
+    @json_endpoint
+    def update_listing_review(listing_id: int) -> Any:
+        body = request.get_json(silent=True) or {}
+        content_status = str(body.get("content_status") or "")
+        use_status = str(body.get("use_status") or "")
+        note = str(body.get("note") or "")[:4000]
+        tags = body.get("tags") or []
+        if content_status not in CONTENT_STATUSES:
+            return jsonify({"error": "Ungültiger Prüfstatus."}), 400
+        if use_status not in USE_STATUSES:
+            return jsonify({"error": "Ungültige Verwendung."}), 400
+        if not isinstance(tags, list) or any(tag not in REVIEW_TAGS for tag in tags):
+            return jsonify({"error": "Ungültige Kennzeichnung."}), 400
+        tags = list(dict.fromkeys(str(tag) for tag in tags))
+        with connection() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM reference_listings WHERE id = %s",
+                (listing_id,),
+            ).fetchone()
+            if not exists:
+                return jsonify({"error": "Listing nicht gefunden."}), 404
+            row = conn.execute(
+                """
+                INSERT INTO listing_reviews (
+                    listing_id, content_status, use_status, tags, note, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, now())
+                ON CONFLICT (listing_id) DO UPDATE SET
+                    content_status = EXCLUDED.content_status,
+                    use_status = EXCLUDED.use_status,
+                    tags = EXCLUDED.tags,
+                    note = EXCLUDED.note,
+                    updated_at = now()
+                RETURNING updated_at
+                """,
+                (listing_id, content_status, use_status, tags, note),
+            ).fetchone()
+        return jsonify({"ok": True, "updated_at": row["updated_at"].isoformat()})
+
+    @app.post("/api/queries/<query_id>/review")
+    @json_endpoint
+    def update_query_review(query_id: str) -> Any:
+        body = request.get_json(silent=True) or {}
+        review_status = str(body.get("review_status") or "")
+        note = str(body.get("note") or "")[:4000]
+        if review_status not in QUERY_STATUSES:
+            return jsonify({"error": "Ungültige Suchbewertung."}), 400
+        with connection() as conn:
+            row = conn.execute(
+                """
+                UPDATE search_queries
+                SET review_status = %s, note = %s, updated_at = now()
+                WHERE id = %s
+                RETURNING updated_at
+                """,
+                (review_status, note, query_id),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Suchbegriff nicht gefunden."}), 404
+        return jsonify({"ok": True, "updated_at": row["updated_at"].isoformat()})
+
+    @app.post("/api/runs/start")
+    @json_endpoint
+    def start_run() -> Any:
+        with connection() as conn:
+            worker = conn.execute(
+                """
+                SELECT api_key_configured,
+                    last_seen_at > now() - interval '90 seconds' AS online
+                FROM worker_status
+                WHERE name = 'reference-importer'
+                """
+            ).fetchone()
+            if not worker or not worker["online"]:
+                return jsonify({"error": "Der Importer ist nicht erreichbar."}), 409
+            if not worker["api_key_configured"]:
+                return jsonify({"error": "Der SerpApi-Key fehlt beim Importer."}), 409
+
+            active = conn.execute(
+                """
+                SELECT id
+                FROM reference_runs
+                WHERE status IN ('queued', 'running', 'blocked', 'cancel_requested')
+                LIMIT 1
+                """
+            ).fetchone()
+            if active:
+                return jsonify({"error": f"Lauf {active['id']} ist bereits aktiv."}), 409
+
+            count_row = conn.execute(
+                "SELECT COUNT(*) AS count FROM search_queries WHERE enabled"
+            ).fetchone()
+            planned = int(count_row["count"])
+            if planned != EXPECTED_QUERY_COUNT:
+                return jsonify(
+                    {
+                        "error": (
+                            f"Start verweigert: erwartet werden {EXPECTED_QUERY_COUNT}, "
+                            f"gefunden wurden {planned} aktive Suchen."
+                        )
+                    }
+                ), 409
+
+            run = conn.execute(
+                """
+                INSERT INTO reference_runs (planned_calls)
+                VALUES (%s)
+                RETURNING id
+                """,
+                (planned,),
+            ).fetchone()
+            conn.execute(
+                """
+                INSERT INTO reference_run_queries (run_id, query_id, page)
+                SELECT %s, id, 1
+                FROM search_queries
+                WHERE enabled
+                ORDER BY position
+                """,
+                (run["id"],),
+            )
+        return jsonify({"ok": True, "run_id": run["id"], "planned_calls": planned}), 201
+
+    @app.post("/api/runs/<int:run_id>/cancel")
+    @json_endpoint
+    def cancel_run(run_id: int) -> Any:
+        with connection() as conn:
+            row = conn.execute(
+                """
+                UPDATE reference_runs
+                SET status = 'cancel_requested', updated_at = now()
+                WHERE id = %s AND status IN ('queued', 'running', 'blocked')
+                RETURNING id
+                """,
+                (run_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Lauf kann nicht gestoppt werden."}), 409
+        return jsonify({"ok": True})
+
+    return app
+
+
+def json_endpoint(function: Callable[..., Any]) -> Callable[..., Any]:
+    @wraps(function)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        if not request.is_json:
+            return jsonify({"error": "JSON erwartet."}), 415
+        return function(*args, **kwargs)
+
+    return wrapper
+
+
+def reference_stats(conn: Any) -> dict[str, int]:
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total,
+            COUNT(*) FILTER (
+                WHERE COALESCE(r.content_status, 'unreviewed') = 'unreviewed'
+            ) AS unreviewed,
+            COUNT(*) FILTER (
+                WHERE COALESCE(r.content_status, 'unreviewed') = 'usable'
+            ) AS usable,
+            COUNT(*) FILTER (
+                WHERE COALESCE(r.content_status, 'unreviewed') = 'unclear'
+            ) AS unclear,
+            COUNT(*) FILTER (
+                WHERE COALESCE(r.content_status, 'unreviewed') = 'unusable'
+            ) AS unusable
+        FROM reference_listings l
+        LEFT JOIN listing_reviews r ON r.listing_id = l.id
+        """
+    ).fetchone()
+    return {key: int(row[key]) for key in row}
+
+
+def format_money(value: Decimal | float | None, currency: str = "") -> str:
+    if value is None:
+        return "Preis fehlt"
+    amount = Decimal(str(value))
+    rendered = f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    if rendered.endswith(",00"):
+        rendered = rendered[:-3]
+    return f"{rendered} {currency}".strip()
+
+
+def format_time(value: datetime | None) -> str:
+    if not value:
+        return "–"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone().strftime("%d.%m.%Y · %H:%M")
+
+
+app = create_app()
+

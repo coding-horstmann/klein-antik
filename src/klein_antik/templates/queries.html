@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Suchbegriffe · klein antik{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>Suchbegriffe</h1>
+    <p>{{ queries|length }} Begriffe in dieser Ansicht</p>
+  </div>
+  <div class="view-switch" aria-label="Referenzansicht">
+    <a href="{{ url_for('references') }}">Listings</a>
+    <a class="active" href="{{ url_for('queries') }}">Suchbegriffe</a>
+  </div>
+</div>
+
+<nav class="category-tabs" aria-label="Kategorien">
+  <a class="{{ 'active' if not selected_category else '' }}" href="{{ url_for('queries') }}">Alle</a>
+  {% for category in categories %}
+    <a
+      class="{{ 'active' if selected_category == category.id else '' }}"
+      href="{{ url_for('queries', category=category.id) }}"
+    >{{ category.label }}</a>
+  {% endfor %}
+</nav>
+
+<section class="query-table-wrap">
+  <table class="query-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Suchbegriff</th>
+        <th>Markt</th>
+        <th>Listings</th>
+        <th>Brauchbar</th>
+        <th>Preisspanne</th>
+        <th>Bewertung</th>
+        <th>Notiz</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for query in queries %}
+        <tr class="query-review" data-query-id="{{ query.id }}">
+          <td>{{ query.position }}</td>
+          <td>
+            <strong>{{ query.query_text }}</strong>
+            <span>{{ query.category_label }}</span>
+          </td>
+          <td>{{ query.ebay_domain }}</td>
+          <td>{{ query.listing_count }}</td>
+          <td>{{ query.usable_count }}</td>
+          <td>
+            {% if query.min_price is not none %}
+              {{ format_money(query.min_price) }} – {{ format_money(query.max_price) }}
+              <span>Median {{ format_money(query.median_price) }}</span>
+            {% else %}
+              –
+            {% endif %}
+          </td>
+          <td>
+            <select name="review_status" aria-label="Suchbegriff bewerten">
+              {% for value, label in query_statuses.items() %}
+                <option value="{{ value }}" {{ 'selected' if query.review_status == value else '' }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <textarea name="note" rows="2" maxlength="4000" placeholder="Notiz">{{ query.note }}</textarea>
+            <div class="save-state" aria-live="polite">Gespeichert</div>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+

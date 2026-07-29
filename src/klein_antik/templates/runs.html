@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Läufe · klein antik{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>Läufe</h1>
+    <p>SerpApi eBay Sold</p>
+  </div>
+  <button
+    class="button primary"
+    id="start-run"
+    type="button"
+    {% if not worker or not worker.online or not worker.api_key_configured %}disabled{% endif %}
+  >
+    <i data-lucide="play" aria-hidden="true"></i>
+    Pilotlauf starten
+  </button>
+</div>
+
+<section class="run-readiness">
+  <div>
+    <span>Importer</span>
+    <strong class="{{ 'ok' if worker and worker.online else 'bad' }}">
+      {{ 'Online' if worker and worker.online else 'Offline' }}
+    </strong>
+  </div>
+  <div>
+    <span>SerpApi-Key</span>
+    <strong class="{{ 'ok' if worker and worker.api_key_configured else 'bad' }}">
+      {{ 'Hinterlegt' if worker and worker.api_key_configured else 'Fehlt' }}
+    </strong>
+  </div>
+  <div>
+    <span>Geplante Searches</span>
+    <strong>{{ expected_calls }}</strong>
+  </div>
+  <div>
+    <span>Seiten je Begriff</span>
+    <strong>1</strong>
+  </div>
+  <div>
+    <span>Produktdetails</span>
+    <strong>0</strong>
+  </div>
+</section>
+
+{% if runs %}
+  <section class="runs-list" data-auto-refresh="{{ 'true' if runs[0].status in ('queued', 'running', 'cancel_requested') else 'false' }}">
+    {% for run in runs %}
+      <article class="run-row">
+        <div class="run-number">
+          <span>Lauf</span>
+          <strong>#{{ run.id }}</strong>
+        </div>
+        <div class="run-progress-block">
+          <div class="run-topline">
+            <strong class="status status-{{ run.status }}">{{ run_labels.get(run.status, run.status) }}</strong>
+            <span>{{ run.completed_calls }} / {{ run.planned_calls }} Searches</span>
+          </div>
+          <div class="progress-track">
+            <span style="width: {{ (run.completed_calls * 100 / run.planned_calls) if run.planned_calls else 0 }}%"></span>
+          </div>
+          <div class="run-metrics">
+            <span>{{ run.successful_calls }} erfolgreich</span>
+            <span>{{ run.failed_calls }} fehlgeschlagen</span>
+            <span>{{ run.imported_results }} Ergebnisse</span>
+            <span>{{ run.unique_listings }} eindeutig</span>
+          </div>
+          {% if run.error %}<p class="run-error">{{ run.error }}</p>{% endif %}
+        </div>
+        <div class="run-time">
+          <span>{{ format_time(run.requested_at) }}</span>
+          {% if run.status in ('queued', 'running', 'blocked') %}
+            <button class="icon-button cancel-run" type="button" data-run-id="{{ run.id }}" title="Lauf stoppen">
+              <i data-lucide="square" aria-hidden="true"></i>
+              <span class="sr-only">Lauf stoppen</span>
+            </button>
+          {% endif %}
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+{% else %}
+  <section class="empty-state compact">
+    <i data-lucide="history" aria-hidden="true"></i>
+    <h2>Noch keine Läufe</h2>
+  </section>
+{% endif %}
+
+{% if failed_queries %}
+  <section class="failed-queries">
+    <h2>Fehlgeschlagene Suchen</h2>
+    {% for failure in failed_queries %}
+      <div>
+        <strong>#{{ failure.run_id }} · {{ failure.query_text }}</strong>
+        <span>{{ failure.error }}</span>
+      </div>
+    {% endfor %}
+  </section>
+{% endif %}
+{% endblock %}
+

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Referenzen · klein antik{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>Referenzen</h1>
+    <p>{{ total }} gefilterte Listings</p>
+  </div>
+  <div class="view-switch" aria-label="Referenzansicht">
+    <a class="active" href="{{ url_for('references') }}">Listings</a>
+    <a href="{{ url_for('queries') }}">Suchbegriffe</a>
+  </div>
+</div>
+
+<section class="stats-strip" aria-label="Referenzstatus">
+  <div><strong>{{ stats.total }}</strong><span>Gesamt</span></div>
+  <div><strong>{{ stats.unreviewed }}</strong><span>Ungeprüft</span></div>
+  <div class="positive"><strong>{{ stats.usable }}</strong><span>Brauchbar</span></div>
+  <div class="warning"><strong>{{ stats.unclear }}</strong><span>Unklar</span></div>
+  <div class="negative"><strong>{{ stats.unusable }}</strong><span>Unbrauchbar</span></div>
+</section>
+
+<nav class="category-tabs" aria-label="Kategorien">
+  <a class="{{ 'active' if not filters.category else '' }}" href="{{ url_for('references') }}">Alle</a>
+  {% for category in categories %}
+    <a
+      class="{{ 'active' if filters.category == category.id else '' }}"
+      href="{{ url_for('references', category=category.id) }}"
+    >{{ category.label }}</a>
+  {% endfor %}
+</nav>
+
+<form class="filter-bar" method="get">
+  {% if filters.category %}<input type="hidden" name="category" value="{{ filters.category }}">{% endif %}
+  <label class="search-field">
+    <i data-lucide="search" aria-hidden="true"></i>
+    <input type="search" name="q" value="{{ filters.q }}" placeholder="Titel oder eBay-ID">
+  </label>
+  <select name="status" aria-label="Prüfstatus">
+    <option value="">Alle Prüfstatus</option>
+    {% for value, label in content_statuses.items() %}
+      <option value="{{ value }}" {{ 'selected' if filters.status == value else '' }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="use" aria-label="Verwendung">
+    <option value="">Alle Verwendungen</option>
+    {% for value, label in use_statuses.items() %}
+      <option value="{{ value }}" {{ 'selected' if filters.use == value else '' }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button class="button secondary" type="submit">
+    <i data-lucide="filter" aria-hidden="true"></i>
+    Filtern
+  </button>
+</form>
+
+{% if listings %}
+  <section class="listing-grid">
+    {% for listing in listings %}
+      <article class="listing-card review-form" data-listing-id="{{ listing.id }}">
+        <div class="listing-image">
+          {% if listing.image_url %}
+            <img src="{{ listing.image_url }}" alt="" loading="lazy">
+          {% else %}
+            <div class="image-missing"><i data-lucide="image-off" aria-hidden="true"></i></div>
+          {% endif %}
+          <span class="price-badge">{{ format_money(listing.price_value, listing.currency) }}</span>
+        </div>
+        <div class="listing-body">
+          <div class="listing-title-row">
+            <h2>{{ listing.title }}</h2>
+            {% if listing.url %}
+              <a class="icon-link" href="{{ listing.url }}" target="_blank" rel="noreferrer" title="Bei eBay öffnen">
+                <i data-lucide="external-link" aria-hidden="true"></i>
+                <span class="sr-only">Bei eBay öffnen</span>
+              </a>
+            {% endif %}
+          </div>
+          <p class="listing-meta">
+            {{ listing.condition_text or 'Zustand unbekannt' }}
+            {% if listing.sold_date %}<span>{{ listing.sold_date }}</span>{% endif %}
+            <span>ID {{ listing.product_id }}</span>
+          </p>
+          <div class="query-chips">
+            {% for query in listing.query_texts[:3] %}<span>{{ query }}</span>{% endfor %}
+            {% if listing.query_texts|length > 3 %}<span>+{{ listing.query_texts|length - 3 }}</span>{% endif %}
+          </div>
+          <div class="review-controls">
+            <label>
+              <span>Prüfstatus</span>
+              <select name="content_status">
+                {% for value, label in content_statuses.items() %}
+                  <option value="{{ value }}" {{ 'selected' if listing.content_status == value else '' }}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              <span>Verwendung</span>
+              <select name="use_status">
+                {% for value, label in use_statuses.items() %}
+                  <option value="{{ value }}" {{ 'selected' if listing.use_status == value else '' }}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+          <div class="tag-list" aria-label="Kennzeichnungen">
+            {% for value, label in review_tags.items() %}
+              <label>
+                <input type="checkbox" name="tags" value="{{ value }}" {{ 'checked' if value in listing.tags else '' }}>
+                <span>{{ label }}</span>
+              </label>
+            {% endfor %}
+          </div>
+          <label class="note-field">
+            <span>Notiz</span>
+            <textarea name="note" rows="3" maxlength="4000" placeholder="Eigene Einschätzung">{{ listing.note }}</textarea>
+          </label>
+          <div class="save-state" aria-live="polite">Gespeichert</div>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+
+  {% if pages > 1 %}
+    <nav class="pagination" aria-label="Seitennavigation">
+      {% if page > 1 %}
+        <a href="{{ url_for('references', page=page-1, **filters) }}">
+          <i data-lucide="chevron-left" aria-hidden="true"></i>
+          Zurück
+        </a>
+      {% endif %}
+      <span>Seite {{ page }} von {{ pages }}</span>
+      {% if page < pages %}
+        <a href="{{ url_for('references', page=page+1, **filters) }}">
+          Weiter
+          <i data-lucide="chevron-right" aria-hidden="true"></i>
+        </a>
+      {% endif %}
+    </nav>
+  {% endif %}
+{% else %}
+  <section class="empty-state">
+    <i data-lucide="archive" aria-hidden="true"></i>
+    <h2>Noch keine Referenzen</h2>
+  </section>
+{% endif %}
+{% endblock %}
+
