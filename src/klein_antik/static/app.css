@@ -617,9 +617,6 @@ textarea:hover {
 }
 
 .query-table th {
-  position: sticky;
-  top: 58px;
-  z-index: 5;
   background: #161918;
   color: var(--muted);
   font-size: 11px;
@@ -937,4 +934,3 @@ textarea:hover {
     grid-column: 1;
   }
 }
-
