@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import unittest
 from decimal import Decimal
+from unittest.mock import Mock, patch
 
-from klein_antik.serpapi import normalized_result, parse_price, product_id_for
+from klein_antik.serpapi import (
+    SerpApiError,
+    normalized_result,
+    parse_price,
+    product_id_for,
+    search_sold,
+)
 
 
 class SerpApiParsingTests(unittest.TestCase):
@@ -44,6 +51,35 @@ class SerpApiParsingTests(unittest.TestCase):
         self.assertEqual(item["product_id"], "123")
         self.assertEqual(item["price_value"], Decimal("45"))
         self.assertNotIn("content_status", item)
+
+    @patch("klein_antik.serpapi.requests.get")
+    def test_search_uses_numeric_worldwide_location(self, get: Mock) -> None:
+        response = Mock()
+        response.ok = True
+        response.status_code = 200
+        response.json.return_value = {"search_metadata": {"status": "Success"}}
+        get.return_value = response
+
+        search_sold(api_key="secret", query="Meissen", ebay_domain="ebay.de")
+
+        self.assertEqual(get.call_args.kwargs["params"]["LH_PrefLoc"], "2")
+
+    @patch("klein_antik.serpapi.requests.get")
+    def test_http_error_does_not_include_api_key(self, get: Mock) -> None:
+        response = Mock()
+        response.ok = False
+        response.status_code = 400
+        response.json.return_value = {"error": "Unsupported location."}
+        get.return_value = response
+
+        with self.assertRaises(SerpApiError) as error:
+            search_sold(api_key="private-key", query="Meissen", ebay_domain="ebay.de")
+
+        self.assertNotIn("private-key", str(error.exception))
+        self.assertEqual(
+            str(error.exception),
+            "SerpApi HTTP 400: Unsupported location.",
+        )
 
 
 if __name__ == "__main__":

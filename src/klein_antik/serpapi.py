@@ -31,23 +31,33 @@ def search_sold(
         "_ipg": "200",
         "show_only": "Sold",
         "LH_ItemCondition": "3000|10",
-        "LH_PrefLoc": "Worldwide",
+        "LH_PrefLoc": "2",
         "no_cache": "false",
         "api_key": api_key,
     }
     if category_id:
         params["category_id"] = category_id
 
-    response = requests.get(
-        SERPAPI_URL,
-        params=params,
-        headers={"Accept": "application/json", "User-Agent": "klein-antik/0.1"},
-        timeout=timeout,
-    )
-    response.raise_for_status()
-    data = response.json()
+    try:
+        response = requests.get(
+            SERPAPI_URL,
+            params=params,
+            headers={"Accept": "application/json", "User-Agent": "klein-antik/0.1"},
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        message = str(exc).replace(api_key, "[redacted]")
+        raise SerpApiError(f"SerpApi-Verbindungsfehler: {message}") from None
+
+    try:
+        data = response.json()
+    except requests.JSONDecodeError:
+        raise SerpApiError(f"SerpApi HTTP {response.status_code}: ungueltige JSON-Antwort.") from None
     if not isinstance(data, dict):
         raise SerpApiError("SerpApi hat keine JSON-Struktur geliefert.")
+    if not response.ok:
+        message = str(data.get("error") or "Anfrage abgelehnt.")
+        raise SerpApiError(f"SerpApi HTTP {response.status_code}: {message}")
     if data.get("error"):
         raise SerpApiError(str(data["error"]))
     status = str((data.get("search_metadata") or {}).get("status") or "")
