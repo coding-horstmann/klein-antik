@@ -25,10 +25,10 @@ Beide Anwendungsdienste verwenden denselben Code und dieselbe Postgres-Datenbank
 
 ```text
 klein-antik-dashboard
-  gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 4 klein_antik.web:app
+  APP_MODE=dashboard
 
 klein-antik-importer
-  python -m klein_antik.worker
+  APP_MODE=worker
 ```
 
 Erforderliche Variablen:
@@ -36,6 +36,7 @@ Erforderliche Variablen:
 ```text
 DATABASE_URL
 PYTHONPATH=src
+APP_MODE=dashboard|worker
 DASHBOARD_USER=niklas
 DASHBOARD_PASSWORD=<geheim>
 SERPAPI_API_KEY_PRIMARY=<nur beim Importer>
@@ -54,4 +55,3 @@ python -m pip install -r requirements.txt
 $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -v
 ```
-
