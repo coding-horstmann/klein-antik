@@ -4,7 +4,7 @@
 <div class="page-heading">
   <div>
     <h1>Läufe</h1>
-    <p>SerpApi eBay Sold</p>
+    <p>Indexierte eBay-Verkäufe</p>
   </div>
   <button
     class="button primary"
@@ -31,7 +31,7 @@
     </strong>
   </div>
   <div>
-    <span>Geplante Searches</span>
+    <span>Suchbegriffe</span>
     <strong>{{ expected_calls }}</strong>
   </div>
   <div>
@@ -43,8 +43,8 @@
     <strong>eBay Deutschland</strong>
   </div>
   <div>
-    <span>Produktdetails</span>
-    <strong>0</strong>
+    <span>SerpApi-Calls</span>
+    <strong>{{ expected_calls }}–{{ expected_calls * 2 }}</strong>
   </div>
 </section>
 
@@ -59,7 +59,7 @@
         <div class="run-progress-block">
           <div class="run-topline">
             <strong class="status status-{{ run.status }}">{{ run_labels.get(run.status, run.status) }}</strong>
-            <span>{{ run.completed_calls }} / {{ run.planned_calls }} Searches</span>
+            <span>{{ run.completed_calls }} / {{ run.planned_calls }} Begriffe</span>
           </div>
           <div class="progress-track">
             <span style="width: {{ (run.completed_calls * 100 / run.planned_calls) if run.planned_calls else 0 }}%"></span>
@@ -67,6 +67,7 @@
           <div class="run-metrics">
             <span>{{ run.successful_calls }} erfolgreich</span>
             <span>{{ run.failed_calls }} fehlgeschlagen</span>
+            <span>{{ run.api_calls_used }} SerpApi-Calls</span>
             <span>{{ run.imported_results }} Ergebnisse</span>
             <span>{{ run.unique_listings }} eindeutig</span>
           </div>

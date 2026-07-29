@@ -40,6 +40,7 @@ def init_schema() -> None:
                 id BIGSERIAL PRIMARY KEY,
                 status TEXT NOT NULL DEFAULT 'queued',
                 planned_calls INTEGER NOT NULL,
+                api_calls_used INTEGER NOT NULL DEFAULT 0,
                 completed_calls INTEGER NOT NULL DEFAULT 0,
                 successful_calls INTEGER NOT NULL DEFAULT 0,
                 failed_calls INTEGER NOT NULL DEFAULT 0,
@@ -64,6 +65,7 @@ def init_schema() -> None:
                 status TEXT NOT NULL DEFAULT 'queued',
                 result_count INTEGER NOT NULL DEFAULT 0,
                 unique_count INTEGER NOT NULL DEFAULT 0,
+                serpapi_calls INTEGER NOT NULL DEFAULT 0,
                 reported_total_results BIGINT,
                 serpapi_search_id TEXT,
                 error TEXT NOT NULL DEFAULT '',
@@ -130,6 +132,12 @@ def init_schema() -> None:
                 message TEXT NOT NULL DEFAULT '',
                 last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
+
+            ALTER TABLE reference_runs
+                ADD COLUMN IF NOT EXISTS api_calls_used INTEGER NOT NULL DEFAULT 0;
+
+            ALTER TABLE reference_run_queries
+                ADD COLUMN IF NOT EXISTS serpapi_calls INTEGER NOT NULL DEFAULT 0;
             """
         )
         seed_queries(conn)
@@ -169,4 +177,3 @@ def seed_queries(conn: Any) -> None:
         raise RuntimeError(
             f"Es muessen genau {EXPECTED_QUERY_COUNT} aktive Pilot-Suchen vorhanden sein."
         )
-

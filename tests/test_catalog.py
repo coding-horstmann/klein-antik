@@ -41,6 +41,9 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual({query.get("category_id") for query in meissen}, {"870"})
         self.assertEqual({query["ebay_domain"] for query in meissen}, {"ebay.de"})
 
+    def test_pilot_uses_only_ebay_germany(self) -> None:
+        self.assertEqual({query["ebay_domain"] for query in load_queries()}, {"ebay.de"})
+
 
 if __name__ == "__main__":
     unittest.main()

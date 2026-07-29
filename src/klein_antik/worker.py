@@ -150,6 +150,9 @@ def save_result(run_id: int, run_query: dict[str, Any], data: dict[str, Any]) ->
     search_metadata = data.get("search_metadata") or {}
     search_information = data.get("search_information") or {}
     reported_total = search_information.get("total_results")
+    serpapi_calls = int(data.get("_discovery_calls_used") or 0) + int(
+        data.get("_detail_calls_used") or 0
+    )
     unique_ids: set[str] = set()
 
     with connection() as conn:
@@ -227,6 +230,7 @@ def save_result(run_id: int, run_query: dict[str, Any], data: dict[str, Any]) ->
             SET status = 'completed',
                 result_count = %s,
                 unique_count = %s,
+                serpapi_calls = %s,
                 reported_total_results = %s,
                 serpapi_search_id = %s,
                 raw_response = %s,
@@ -236,6 +240,7 @@ def save_result(run_id: int, run_query: dict[str, Any], data: dict[str, Any]) ->
             (
                 len(results),
                 len(unique_ids),
+                serpapi_calls,
                 reported_total if isinstance(reported_total, int) else None,
                 str(search_metadata.get("id") or ""),
                 Jsonb(data),
@@ -245,15 +250,15 @@ def save_result(run_id: int, run_query: dict[str, Any], data: dict[str, Any]) ->
         refresh_run_stats(conn, run_id)
 
 
-def fail_query(run_id: int, run_query_id: int, error: str) -> None:
+def fail_query(run_id: int, run_query_id: int, error: str, serpapi_calls: int = 1) -> None:
     with connection() as conn:
         conn.execute(
             """
             UPDATE reference_run_queries
-            SET status = 'failed', error = %s, completed_at = now()
+            SET status = 'failed', error = %s, serpapi_calls = %s, completed_at = now()
             WHERE id = %s
             """,
-            (error[:1000], run_query_id),
+            (error[:1000], serpapi_calls, run_query_id),
         )
         refresh_run_stats(conn, run_id)
 
@@ -265,7 +270,8 @@ def refresh_run_stats(conn: Any, run_id: int) -> None:
             COUNT(*) FILTER (WHERE status IN ('completed', 'failed', 'cancelled')) AS completed,
             COUNT(*) FILTER (WHERE status = 'completed') AS successful,
             COUNT(*) FILTER (WHERE status = 'failed') AS failed,
-            COALESCE(SUM(result_count), 0) AS imported
+            COALESCE(SUM(result_count), 0) AS imported,
+            COALESCE(SUM(serpapi_calls), 0) AS api_calls_used
         FROM reference_run_queries
         WHERE run_id = %s
         """,
@@ -283,6 +289,7 @@ def refresh_run_stats(conn: Any, run_id: int) -> None:
         """
         UPDATE reference_runs
         SET completed_calls = %s,
+            api_calls_used = %s,
             successful_calls = %s,
             failed_calls = %s,
             imported_results = %s,
@@ -292,6 +299,7 @@ def refresh_run_stats(conn: Any, run_id: int) -> None:
         """,
         (
             int(counts["completed"]),
+            int(counts["api_calls_used"]),
             int(counts["successful"]),
             int(counts["failed"]),
             int(counts["imported"]),
@@ -360,7 +368,8 @@ def process_run(run: dict[str, Any], key: str, interval: float) -> None:
         except Exception as exc:  # a failed query is recorded and the run continues
             error = f"{type(exc).__name__}: {exc}"
             LOG.exception("Suche fehlgeschlagen: %s", run_query["query_text"])
-            fail_query(run_id, int(run_query["id"]), error)
+            calls_used = exc.calls_used if isinstance(exc, SerpApiError) else 0
+            fail_query(run_id, int(run_query["id"]), error, calls_used)
             provider_message = str(exc).lower()
             broad_sold_preflight_failed = (
                 run_query["query_id"] == "meissen"

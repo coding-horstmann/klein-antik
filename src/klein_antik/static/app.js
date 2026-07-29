@@ -82,7 +82,7 @@ function bindRunControls() {
   if (start) {
     start.addEventListener("click", async () => {
       const confirmed = window.confirm(
-        "Pilotlauf mit genau 110 SerpApi-Suchen starten? Es werden nur erste Ergebnisseiten und keine Produktdetails geladen."
+        "Pilotlauf mit 110 Suchbegriffen starten? Je Begriff wird eine indexierte Sold-Suche und bei einem Treffer höchstens eine Produktdetailabfrage geladen (110 bis 220 SerpApi-Calls)."
       );
       if (!confirmed) return;
       start.disabled = true;
@@ -131,4 +131,3 @@ document.addEventListener("DOMContentLoaded", () => {
   );
   bindRunControls();
 });
-

@@ -1,17 +1,18 @@
 # klein-antik
 
 Pilot fuer einen Antiquitaeten- und Design-Dealfinder. Der erste Schritt sammelt
-verkaufte eBay-Referenzen ueber 110 fest definierte SerpApi-Suchen und stellt sie
+verkaufte eBay-Referenzen ueber 110 fest definierte Suchbegriffe und stellt sie
 in einem Review-Dashboard bereit.
 
 ## Pilotumfang
 
 - 110 Suchbegriffe in neun Kategorien
-- genau eine eBay-Ergebnisseite je Suchbegriff
-- maximal 200 Ergebnisse je Suche
-- nur verkaufte Artikel
-- gebraucht oder Zustand nicht angegeben
-- keine Produktdetailabfragen
+- ausschliesslich ebay.de
+- eine indexierte eBay-Sold-Suche je Suchbegriff
+- maximal 50 indexierte Ergebnisse je Suche
+- nur als verkauft gekennzeichnete Artikelseiten
+- hoechstens eine Produktdetailabfrage je Suchbegriff fuer Bild, Preis und Zustand
+- 110 bis maximal 220 SerpApi-Calls pro Pilotlauf
 - Deduplizierung ueber die eBay-Produkt-ID
 - Bewertung, Verwendungsart, Tags und Notizen je Listing
 - Bewertung und Notiz je Suchbegriff
