@@ -141,6 +141,12 @@ class SerpApiParsingTests(unittest.TestCase):
         self.assertEqual(sold_price("This listing sold on Fri. £120.00"), "£120.00")
         self.assertEqual(sold_price("Verkauft EUR 1.234,50"), "EUR 1.234,50")
         self.assertEqual(
+            sold_date_text(
+                "Dieses Angebot wurde verkauft am Fr, 10. Jul um 09:20. Meissen"
+            ),
+            "Fr, 10. Jul um 09:20",
+        )
+        self.assertEqual(
             sold_date_text("This listing sold on Fri, Jul 10 at 9:20 AM. Item"),
             "Fri, Jul 10 at 9:20 AM",
         )

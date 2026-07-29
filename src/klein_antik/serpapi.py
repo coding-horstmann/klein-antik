@@ -254,15 +254,19 @@ def sold_price(snippet: str) -> str:
 
 
 def sold_date_text(snippet: str) -> str:
+    marker = (
+        r"(?:Dieses Angebot wurde verkauft am|This listing sold on|"
+        r"Cet objet a [ée]t[ée] vendu le)"
+    )
     match = re.search(
-        (
-            r"(?:Dieses Angebot wurde verkauft am|This listing sold on|"
-            r"Cet objet a [ée]t[ée] vendu le)\s+(.+?)(?:\.\s|$)"
-        ),
+        rf"{marker}\s+(.+?\b\d{{1,2}}:\d{{2}}(?:\s*[AP]\.?M\.?)?)",
         snippet,
         flags=re.IGNORECASE,
     )
-    return match.group(1).strip() if match else ""
+    if match:
+        return match.group(1).strip().rstrip(".")
+    fallback = re.search(rf"{marker}\s+(.+?)(?:\.\s|$)", snippet, flags=re.IGNORECASE)
+    return fallback.group(1).strip() if fallback else ""
 
 
 def enrich_with_product_detail(item: dict[str, Any], detail: dict[str, Any]) -> None:
