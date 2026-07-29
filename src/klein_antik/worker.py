@@ -361,9 +361,20 @@ def process_run(run: dict[str, Any], key: str, interval: float) -> None:
             error = f"{type(exc).__name__}: {exc}"
             LOG.exception("Suche fehlgeschlagen: %s", run_query["query_text"])
             fail_query(run_id, int(run_query["id"]), error)
-            if isinstance(exc, SerpApiError) and any(
-                token in str(exc).lower() for token in ("credit", "quota", "run out", "limit")
-            ):
+            provider_message = str(exc).lower()
+            broad_sold_preflight_failed = (
+                run_query["query_id"] == "meissen"
+                and "ebay hasn't returned any results for this query" in provider_message
+            )
+            quota_blocked = any(
+                token in provider_message for token in ("credit", "quota", "run out", "limit")
+            )
+            if isinstance(exc, SerpApiError) and (quota_blocked or broad_sold_preflight_failed):
+                if broad_sold_preflight_failed:
+                    error = (
+                        "SerpApi liefert fuer die breite Meissen-Kontrollsuche "
+                        "keine deutschen eBay-Sold-Daten. Lauf zum Schutz des Kontingents blockiert."
+                    )
                 with connection() as conn:
                     conn.execute(
                         """

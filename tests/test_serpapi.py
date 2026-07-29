@@ -53,7 +53,7 @@ class SerpApiParsingTests(unittest.TestCase):
         self.assertNotIn("content_status", item)
 
     @patch("klein_antik.serpapi.requests.get")
-    def test_search_uses_numeric_worldwide_location(self, get: Mock) -> None:
+    def test_search_uses_numeric_domestic_location(self, get: Mock) -> None:
         response = Mock()
         response.ok = True
         response.status_code = 200
@@ -62,7 +62,7 @@ class SerpApiParsingTests(unittest.TestCase):
 
         search_sold(api_key="secret", query="Meissen", ebay_domain="ebay.de")
 
-        self.assertEqual(get.call_args.kwargs["params"]["LH_PrefLoc"], "2")
+        self.assertEqual(get.call_args.kwargs["params"]["LH_PrefLoc"], "1")
 
     @patch("klein_antik.serpapi.requests.get")
     def test_http_error_does_not_include_api_key(self, get: Mock) -> None:

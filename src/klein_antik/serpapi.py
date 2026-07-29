@@ -31,7 +31,7 @@ def search_sold(
         "_ipg": "200",
         "show_only": "Sold",
         "LH_ItemCondition": "3000|10",
-        "LH_PrefLoc": "2",
+        "LH_PrefLoc": "1",
         "no_cache": "false",
         "api_key": api_key,
     }
