@@ -133,11 +133,114 @@ def init_schema() -> None:
                 last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
 
+            CREATE TABLE IF NOT EXISTS market_runs (
+                id BIGSERIAL PRIMARY KEY,
+                status TEXT NOT NULL DEFAULT 'queued',
+                planned_tasks INTEGER NOT NULL,
+                completed_tasks INTEGER NOT NULL DEFAULT 0,
+                successful_tasks INTEGER NOT NULL DEFAULT 0,
+                failed_tasks INTEGER NOT NULL DEFAULT 0,
+                imported_results INTEGER NOT NULL DEFAULT 0,
+                unique_listings INTEGER NOT NULL DEFAULT 0,
+                error TEXT NOT NULL DEFAULT '',
+                requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                started_at TIMESTAMPTZ,
+                completed_at TIMESTAMPTZ,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                CHECK (status IN (
+                    'queued', 'running', 'completed', 'completed_with_errors',
+                    'cancel_requested', 'cancelled', 'failed'
+                ))
+            );
+
+            CREATE TABLE IF NOT EXISTS market_run_tasks (
+                id BIGSERIAL PRIMARY KEY,
+                run_id BIGINT NOT NULL REFERENCES market_runs(id) ON DELETE CASCADE,
+                query_id TEXT NOT NULL REFERENCES search_queries(id),
+                source TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                result_count INTEGER NOT NULL DEFAULT 0,
+                unique_count INTEGER NOT NULL DEFAULT 0,
+                error TEXT NOT NULL DEFAULT '',
+                started_at TIMESTAMPTZ,
+                completed_at TIMESTAMPTZ,
+                UNIQUE (run_id, query_id, source),
+                CHECK (source IN (
+                    'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen'
+                )),
+                CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled'))
+            );
+
+            CREATE INDEX IF NOT EXISTS market_run_tasks_run_idx
+                ON market_run_tasks (run_id, status, id);
+
+            CREATE TABLE IF NOT EXISTS market_listings (
+                id BIGSERIAL PRIMARY KEY,
+                source TEXT NOT NULL,
+                source_item_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                url TEXT NOT NULL,
+                image_url TEXT NOT NULL DEFAULT '',
+                price_status TEXT NOT NULL DEFAULT 'unknown',
+                price_value NUMERIC,
+                price_raw TEXT NOT NULL DEFAULT '',
+                currency TEXT NOT NULL DEFAULT '',
+                price_basis TEXT NOT NULL DEFAULT 'unknown',
+                estimate_raw TEXT NOT NULL DEFAULT '',
+                sale_date TEXT NOT NULL DEFAULT '',
+                attribution TEXT NOT NULL DEFAULT 'stated',
+                raw_result JSONB NOT NULL DEFAULT '{}'::jsonb,
+                first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                UNIQUE (source, source_item_id),
+                CHECK (price_status IN (
+                    'sold', 'ask', 'current_bid', 'estimate', 'unsold', 'unknown'
+                )),
+                CHECK (price_basis IN (
+                    'hammer', 'realised', 'premium_included', 'reserve',
+                    'current_bid', 'estimate', 'unknown'
+                )),
+                CHECK (attribution IN ('stated', 'uncertain'))
+            );
+
+            CREATE INDEX IF NOT EXISTS market_listings_price_idx
+                ON market_listings (price_status, currency, price_value);
+            CREATE INDEX IF NOT EXISTS market_listings_source_idx
+                ON market_listings (source, last_seen_at DESC);
+
+            CREATE TABLE IF NOT EXISTS market_listing_query_matches (
+                listing_id BIGINT NOT NULL REFERENCES market_listings(id) ON DELETE CASCADE,
+                query_id TEXT NOT NULL REFERENCES search_queries(id),
+                first_run_id BIGINT NOT NULL REFERENCES market_runs(id),
+                last_run_id BIGINT NOT NULL REFERENCES market_runs(id),
+                best_rank INTEGER NOT NULL,
+                last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (listing_id, query_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS market_listing_query_matches_query_idx
+                ON market_listing_query_matches (query_id, listing_id);
+
+            CREATE TABLE IF NOT EXISTS market_listing_reviews (
+                listing_id BIGINT PRIMARY KEY REFERENCES market_listings(id) ON DELETE CASCADE,
+                content_status TEXT NOT NULL DEFAULT 'unreviewed',
+                use_status TEXT NOT NULL DEFAULT 'price_image',
+                tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+                note TEXT NOT NULL DEFAULT '',
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                CHECK (content_status IN ('unreviewed', 'usable', 'unclear', 'unusable')),
+                CHECK (use_status IN ('price_image', 'price_only', 'image_only', 'do_not_use'))
+            );
+
             ALTER TABLE reference_runs
                 ADD COLUMN IF NOT EXISTS api_calls_used INTEGER NOT NULL DEFAULT 0;
 
             ALTER TABLE reference_run_queries
                 ADD COLUMN IF NOT EXISTS serpapi_calls INTEGER NOT NULL DEFAULT 0;
+
+            ALTER TABLE worker_status
+                ADD COLUMN IF NOT EXISTS current_market_run_id BIGINT
+                REFERENCES market_runs(id) ON DELETE SET NULL;
             """
         )
         seed_queries(conn)

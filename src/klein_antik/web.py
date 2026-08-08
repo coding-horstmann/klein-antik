@@ -10,8 +10,9 @@ from typing import Any, Callable
 
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
-from .catalog import EXPECTED_QUERY_COUNT, category_options
+from .catalog import EXPECTED_QUERY_COUNT, category_options, load_queries
 from .db import connection, init_schema
+from .market_sources import SOURCE_LABELS, sources_for_category
 
 
 CONTENT_STATUSES = {
@@ -39,13 +40,31 @@ REVIEW_TAGS = {
     "wrong_category": "Falsche Kategorie",
     "bad_image": "Schlechtes Foto",
     "price_missing": "Preis fehlt",
+    "uncertain_attribution": "Zuschreibung unsicher",
+    "duplicate": "Dublette",
+}
+PRICE_STATUSES = {
+    "sold": "Verkauft",
+    "ask": "Angebot",
+    "current_bid": "Aktuelles Gebot",
+    "estimate": "Schätzung",
+    "unsold": "Unverkauft",
+    "unknown": "Unbekannt",
+}
+PRICE_BASIS_LABELS = {
+    "hammer": "Hammerpreis",
+    "realised": "Realisierter Preis",
+    "premium_included": "Inklusive Aufgeld",
+    "reserve": "Reserve/Angebot",
+    "current_bid": "Aktuelles Gebot",
+    "estimate": "Schätzung",
+    "unknown": "Preisgrundlage unbekannt",
 }
 RUN_LABELS = {
     "queued": "Wartet",
     "running": "Läuft",
     "completed": "Abgeschlossen",
     "completed_with_errors": "Mit Fehlern beendet",
-    "blocked": "Blockiert",
     "cancel_requested": "Stopp angefordert",
     "cancelled": "Abgebrochen",
     "failed": "Fehlgeschlagen",
@@ -100,6 +119,9 @@ def create_app() -> Flask:
             "use_statuses": USE_STATUSES,
             "query_statuses": QUERY_STATUSES,
             "review_tags": REVIEW_TAGS,
+            "price_statuses": PRICE_STATUSES,
+            "price_basis_labels": PRICE_BASIS_LABELS,
+            "source_labels": SOURCE_LABELS,
             "run_labels": RUN_LABELS,
             "categories": category_options(),
             "format_money": format_money,
@@ -124,6 +146,8 @@ def create_app() -> Flask:
         category = request.args.get("category", "").strip()
         content_status = request.args.get("status", "").strip()
         use_status = request.args.get("use", "").strip()
+        price_status = request.args.get("price_status", "").strip()
+        source = request.args.get("source", "").strip()
         search = request.args.get("q", "").strip()
         page = max(1, min(10000, request.args.get("page", 1, type=int)))
         page_size = 36
@@ -135,7 +159,7 @@ def create_app() -> Flask:
                 """
                 EXISTS (
                     SELECT 1
-                    FROM listing_query_matches fqm
+                    FROM market_listing_query_matches fqm
                     JOIN search_queries fq ON fq.id = fqm.query_id
                     WHERE fqm.listing_id = l.id AND fq.category = %s
                 )
@@ -148,8 +172,14 @@ def create_app() -> Flask:
         if use_status in USE_STATUSES:
             where.append("COALESCE(r.use_status, 'price_image') = %s")
             params.append(use_status)
+        if price_status in PRICE_STATUSES:
+            where.append("l.price_status = %s")
+            params.append(price_status)
+        if source in SOURCE_LABELS:
+            where.append("l.source = %s")
+            params.append(source)
         if search:
-            where.append("(l.title ILIKE %s OR l.product_id ILIKE %s)")
+            where.append("(l.title ILIKE %s OR l.source_item_id ILIKE %s)")
             params.extend([f"%{search}%", f"%{search}%"])
 
         where_sql = " AND ".join(where)
@@ -157,8 +187,8 @@ def create_app() -> Flask:
             total_row = conn.execute(
                 f"""
                 SELECT COUNT(*) AS count
-                FROM reference_listings l
-                LEFT JOIN listing_reviews r ON r.listing_id = l.id
+                FROM market_listings l
+                LEFT JOIN market_listing_reviews r ON r.listing_id = l.id
                 WHERE {where_sql}
                 """,
                 params,
@@ -174,18 +204,19 @@ def create_app() -> Flask:
                     r.updated_at AS review_updated_at,
                     array_agg(DISTINCT q.query_text ORDER BY q.query_text) AS query_texts,
                     array_agg(DISTINCT q.category ORDER BY q.category) AS category_ids
-                FROM reference_listings l
-                LEFT JOIN listing_reviews r ON r.listing_id = l.id
-                JOIN listing_query_matches qm ON qm.listing_id = l.id
+                FROM market_listings l
+                LEFT JOIN market_listing_reviews r ON r.listing_id = l.id
+                JOIN market_listing_query_matches qm ON qm.listing_id = l.id
                 JOIN search_queries q ON q.id = qm.query_id
                 WHERE {where_sql}
-                GROUP BY l.id, r.listing_id, r.content_status, r.use_status, r.tags, r.note, r.updated_at
+                GROUP BY l.id, r.listing_id, r.content_status, r.use_status,
+                    r.tags, r.note, r.updated_at
                 ORDER BY l.last_seen_at DESC, l.id DESC
                 LIMIT %s OFFSET %s
                 """,
                 [*params, page_size, (page - 1) * page_size],
             ).fetchall()
-            stats = reference_stats(conn)
+            stats = market_stats(conn)
 
         total = int(total_row["count"]) if total_row else 0
         return render_template(
@@ -200,6 +231,8 @@ def create_app() -> Flask:
                 "category": category,
                 "status": content_status,
                 "use": use_status,
+                "price_status": price_status,
+                "source": source,
                 "q": search,
             },
         )
@@ -216,22 +249,23 @@ def create_app() -> Flask:
                     q.*,
                     COUNT(DISTINCT qm.listing_id) AS listing_count,
                     COUNT(DISTINCT qm.listing_id) FILTER (
+                        WHERE l.price_status = 'sold'
+                    ) AS sold_count,
+                    COUNT(DISTINCT qm.listing_id) FILTER (
+                        WHERE l.price_status = 'ask'
+                    ) AS ask_count,
+                    COUNT(DISTINCT qm.listing_id) FILTER (
+                        WHERE l.price_status = 'unsold'
+                    ) AS unsold_count,
+                    COUNT(DISTINCT qm.listing_id) FILTER (
                         WHERE COALESCE(r.content_status, 'unreviewed') = 'usable'
                     ) AS usable_count,
-                    COUNT(DISTINCT qm.listing_id) FILTER (
-                        WHERE COALESCE(r.content_status, 'unreviewed') = 'unclear'
-                    ) AS unclear_count,
-                    COUNT(DISTINCT qm.listing_id) FILTER (
-                        WHERE COALESCE(r.content_status, 'unreviewed') = 'unusable'
-                    ) AS unusable_count,
-                    MIN(l.price_value) AS min_price,
-                    percentile_cont(0.5) WITHIN GROUP (ORDER BY l.price_value)
-                        FILTER (WHERE l.price_value IS NOT NULL) AS median_price,
-                    MAX(l.price_value) AS max_price
+                    array_remove(array_agg(DISTINCT l.source ORDER BY l.source), NULL)
+                        AS source_ids
                 FROM search_queries q
-                LEFT JOIN listing_query_matches qm ON qm.query_id = q.id
-                LEFT JOIN reference_listings l ON l.id = qm.listing_id
-                LEFT JOIN listing_reviews r ON r.listing_id = l.id
+                LEFT JOIN market_listing_query_matches qm ON qm.query_id = q.id
+                LEFT JOIN market_listings l ON l.id = qm.listing_id
+                LEFT JOIN market_listing_reviews r ON r.listing_id = l.id
                 {where}
                 GROUP BY q.id
                 ORDER BY q.position
@@ -249,29 +283,23 @@ def create_app() -> Flask:
     def runs() -> Any:
         with connection() as conn:
             run_rows = conn.execute(
-                """
-                SELECT *
-                FROM reference_runs
-                ORDER BY id DESC
-                LIMIT 30
-                """
+                "SELECT * FROM market_runs ORDER BY id DESC LIMIT 30"
             ).fetchall()
             worker = conn.execute(
                 """
-                SELECT *,
-                    last_seen_at > now() - interval '90 seconds' AS online
+                SELECT *, last_seen_at > now() - interval '90 seconds' AS online
                 FROM worker_status
-                WHERE name = 'reference-importer'
+                WHERE name = 'market-importer'
                 """
             ).fetchone()
-            failed_queries = conn.execute(
+            failed_tasks = conn.execute(
                 """
-                SELECT rq.run_id, q.query_text, rq.error
-                FROM reference_run_queries rq
-                JOIN search_queries q ON q.id = rq.query_id
-                WHERE rq.status = 'failed'
-                ORDER BY rq.id DESC
-                LIMIT 20
+                SELECT task.run_id, task.source, q.query_text, task.error
+                FROM market_run_tasks task
+                JOIN search_queries q ON q.id = task.query_id
+                WHERE task.status = 'failed'
+                ORDER BY task.id DESC
+                LIMIT 30
                 """
             ).fetchall()
         return render_template(
@@ -279,8 +307,9 @@ def create_app() -> Flask:
             active_tab="runs",
             runs=[dict(row) for row in run_rows],
             worker=dict(worker) if worker else None,
-            failed_queries=[dict(row) for row in failed_queries],
-            expected_calls=EXPECTED_QUERY_COUNT,
+            failed_tasks=[dict(row) for row in failed_tasks],
+            expected_queries=EXPECTED_QUERY_COUNT,
+            expected_tasks=expected_market_tasks(),
         )
 
     @app.get("/deals")
@@ -318,14 +347,14 @@ def create_app() -> Flask:
         tags = list(dict.fromkeys(str(tag) for tag in tags))
         with connection() as conn:
             exists = conn.execute(
-                "SELECT 1 FROM reference_listings WHERE id = %s",
+                "SELECT 1 FROM market_listings WHERE id = %s",
                 (listing_id,),
             ).fetchone()
             if not exists:
                 return jsonify({"error": "Listing nicht gefunden."}), 404
             row = conn.execute(
                 """
-                INSERT INTO listing_reviews (
+                INSERT INTO market_listing_reviews (
                     listing_id, content_status, use_status, tags, note, updated_at
                 )
                 VALUES (%s, %s, %s, %s, %s, now())
@@ -369,61 +398,68 @@ def create_app() -> Flask:
         with connection() as conn:
             worker = conn.execute(
                 """
-                SELECT api_key_configured,
-                    last_seen_at > now() - interval '90 seconds' AS online
+                SELECT last_seen_at > now() - interval '90 seconds' AS online
                 FROM worker_status
-                WHERE name = 'reference-importer'
+                WHERE name = 'market-importer'
                 """
             ).fetchone()
             if not worker or not worker["online"]:
-                return jsonify({"error": "Der Importer ist nicht erreichbar."}), 409
-            if not worker["api_key_configured"]:
-                return jsonify({"error": "Der SerpApi-Key fehlt beim Importer."}), 409
+                return jsonify({"error": "Der Marktpreis-Importer ist nicht erreichbar."}), 409
 
             active = conn.execute(
                 """
                 SELECT id
-                FROM reference_runs
-                WHERE status IN ('queued', 'running', 'blocked', 'cancel_requested')
+                FROM market_runs
+                WHERE status IN ('queued', 'running', 'cancel_requested')
                 LIMIT 1
                 """
             ).fetchone()
             if active:
                 return jsonify({"error": f"Lauf {active['id']} ist bereits aktiv."}), 409
 
-            count_row = conn.execute(
-                "SELECT COUNT(*) AS count FROM search_queries WHERE enabled"
-            ).fetchone()
-            planned = int(count_row["count"])
-            if planned != EXPECTED_QUERY_COUNT:
+            query_rows = conn.execute(
+                """
+                SELECT id, category
+                FROM search_queries
+                WHERE enabled
+                ORDER BY position
+                """
+            ).fetchall()
+            if len(query_rows) != EXPECTED_QUERY_COUNT:
                 return jsonify(
                     {
                         "error": (
                             f"Start verweigert: erwartet werden {EXPECTED_QUERY_COUNT}, "
-                            f"gefunden wurden {planned} aktive Suchen."
+                            f"gefunden wurden {len(query_rows)} aktive Suchen."
                         )
                     }
                 ), 409
 
+            tasks = [
+                (query_row["id"], source)
+                for query_row in query_rows
+                for source in sources_for_category(query_row["category"])
+            ]
             run = conn.execute(
-                """
-                INSERT INTO reference_runs (planned_calls)
-                VALUES (%s)
-                RETURNING id
-                """,
-                (planned,),
+                "INSERT INTO market_runs (planned_tasks) VALUES (%s) RETURNING id",
+                (len(tasks),),
             ).fetchone()
-            conn.execute(
-                """
-                INSERT INTO reference_run_queries (run_id, query_id, page)
-                SELECT %s, id, 1
-                FROM search_queries
-                WHERE enabled
-                ORDER BY position
-                """,
-                (run["id"],),
-            )
-        return jsonify({"ok": True, "run_id": run["id"], "planned_calls": planned}), 201
+            for query_id, source in tasks:
+                conn.execute(
+                    """
+                    INSERT INTO market_run_tasks (run_id, query_id, source)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (run["id"], query_id, source),
+                )
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run["id"],
+                "planned_queries": len(query_rows),
+                "planned_tasks": len(tasks),
+            }
+        ), 201
 
     @app.post("/api/runs/<int:run_id>/cancel")
     @json_endpoint
@@ -431,9 +467,9 @@ def create_app() -> Flask:
         with connection() as conn:
             row = conn.execute(
                 """
-                UPDATE reference_runs
+                UPDATE market_runs
                 SET status = 'cancel_requested', updated_at = now()
-                WHERE id = %s AND status IN ('queued', 'running', 'blocked')
+                WHERE id = %s AND status IN ('queued', 'running')
                 RETURNING id
                 """,
                 (run_id,),
@@ -455,28 +491,28 @@ def json_endpoint(function: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-def reference_stats(conn: Any) -> dict[str, int]:
+def market_stats(conn: Any) -> dict[str, int]:
     row = conn.execute(
         """
         SELECT
             COUNT(*) AS total,
-            COUNT(*) FILTER (
-                WHERE COALESCE(r.content_status, 'unreviewed') = 'unreviewed'
-            ) AS unreviewed,
+            COUNT(*) FILTER (WHERE l.price_status = 'sold') AS sold,
+            COUNT(*) FILTER (WHERE l.price_status = 'ask') AS ask,
+            COUNT(*) FILTER (WHERE l.price_status = 'unsold') AS unsold,
             COUNT(*) FILTER (
                 WHERE COALESCE(r.content_status, 'unreviewed') = 'usable'
-            ) AS usable,
-            COUNT(*) FILTER (
-                WHERE COALESCE(r.content_status, 'unreviewed') = 'unclear'
-            ) AS unclear,
-            COUNT(*) FILTER (
-                WHERE COALESCE(r.content_status, 'unreviewed') = 'unusable'
-            ) AS unusable
-        FROM reference_listings l
-        LEFT JOIN listing_reviews r ON r.listing_id = l.id
+            ) AS usable
+        FROM market_listings l
+        LEFT JOIN market_listing_reviews r ON r.listing_id = l.id
         """
     ).fetchone()
     return {key: int(row[key]) for key in row}
+
+
+def expected_market_tasks() -> int:
+    return sum(
+        len(sources_for_category(query["category"])) for query in load_queries()
+    )
 
 
 def format_money(value: Decimal | float | None, currency: str = "") -> str:
@@ -498,4 +534,3 @@ def format_time(value: datetime | None) -> str:
 
 
 app = create_app()
-

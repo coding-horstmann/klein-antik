@@ -16,7 +16,7 @@
         Deals
       </a>
       <a class="{{ 'active' if active_tab in ('references', 'queries') else '' }}" href="{{ url_for('references') }}">
-        Referenzen
+        Marktpreise
       </a>
       <a class="{{ 'active' if active_tab == 'runs' else '' }}" href="{{ url_for('runs') }}">
         Läufe
@@ -32,4 +32,3 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
-

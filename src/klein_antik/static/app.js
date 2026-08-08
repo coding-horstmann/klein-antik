@@ -82,7 +82,7 @@ function bindRunControls() {
   if (start) {
     start.addEventListener("click", async () => {
       const confirmed = window.confirm(
-        "Pilotlauf mit 110 Suchbegriffen starten? Je Begriff wird eine indexierte Sold-Suche und bei einem Treffer höchstens eine Produktdetailabfrage geladen (110 bis 220 SerpApi-Calls)."
+        "Marktpreislauf für alle 110 Suchbegriffe starten? Dabei werden 238 öffentliche Quellenabfragen bei vier Auktionshäusern ausgeführt."
       );
       if (!confirmed) return;
       start.disabled = true;

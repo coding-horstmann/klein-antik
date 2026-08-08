@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import signal
@@ -9,17 +8,16 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from .catalog import EXPECTED_QUERY_COUNT
-from .config import env_float, env_int, serpapi_key
+from .config import env_float, env_int
 from .db import connection, init_schema
-from .serpapi import SerpApiError, normalized_result, search_sold
+from .market_sources import SOURCE_LABELS, build_session, collect
 
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s %(message)s",
 )
-LOG = logging.getLogger("klein_antik.worker")
+LOG = logging.getLogger("klein_antik.market_worker")
 STOP = False
 
 
@@ -31,7 +29,6 @@ def _stop(_signum: int, _frame: Any) -> None:
 def heartbeat(
     state: str,
     *,
-    key_configured: bool,
     current_run_id: int | None = None,
     message: str = "",
 ) -> None:
@@ -39,17 +36,19 @@ def heartbeat(
         conn.execute(
             """
             INSERT INTO worker_status (
-                name, state, api_key_configured, current_run_id, message, last_seen_at
+                name, state, api_key_configured, current_run_id,
+                current_market_run_id, message, last_seen_at
             )
-            VALUES ('reference-importer', %s, %s, %s, %s, now())
+            VALUES ('market-importer', %s, TRUE, NULL, %s, %s, now())
             ON CONFLICT (name) DO UPDATE SET
                 state = EXCLUDED.state,
-                api_key_configured = EXCLUDED.api_key_configured,
-                current_run_id = EXCLUDED.current_run_id,
+                api_key_configured = TRUE,
+                current_run_id = NULL,
+                current_market_run_id = EXCLUDED.current_market_run_id,
                 message = EXCLUDED.message,
                 last_seen_at = now()
             """,
-            (state, key_configured, current_run_id, message[:500]),
+            (state, current_run_id, message[:500]),
         )
 
 
@@ -57,9 +56,9 @@ def claim_run() -> dict[str, Any] | None:
     with connection() as conn:
         row = conn.execute(
             """
-            SELECT id, planned_calls
-            FROM reference_runs
-            WHERE status = 'queued'
+            SELECT id, planned_tasks
+            FROM market_runs
+            WHERE status IN ('queued', 'running')
             ORDER BY id
             FOR UPDATE SKIP LOCKED
             LIMIT 1
@@ -67,12 +66,12 @@ def claim_run() -> dict[str, Any] | None:
         ).fetchone()
         if not row:
             return None
-        if int(row["planned_calls"]) > EXPECTED_QUERY_COUNT:
+        if int(row["planned_tasks"]) > 350:
             conn.execute(
                 """
-                UPDATE reference_runs
+                UPDATE market_runs
                 SET status = 'failed',
-                    error = 'Lauf ueberschreitet das feste Pilotbudget.',
+                    error = 'Lauf ueberschreitet die feste Obergrenze von 350 Aufgaben.',
                     completed_at = now(),
                     updated_at = now()
                 WHERE id = %s
@@ -82,7 +81,15 @@ def claim_run() -> dict[str, Any] | None:
             return None
         conn.execute(
             """
-            UPDATE reference_runs
+            UPDATE market_run_tasks
+            SET status = 'queued', started_at = NULL
+            WHERE run_id = %s AND status = 'running'
+            """,
+            (row["id"],),
+        )
+        conn.execute(
+            """
+            UPDATE market_runs
             SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
             WHERE id = %s
             """,
@@ -91,10 +98,10 @@ def claim_run() -> dict[str, Any] | None:
         return dict(row)
 
 
-def next_query(run_id: int) -> dict[str, Any] | None:
+def next_task(run_id: int) -> dict[str, Any] | None:
     with connection() as conn:
         run = conn.execute(
-            "SELECT status FROM reference_runs WHERE id = %s FOR UPDATE",
+            "SELECT status FROM market_runs WHERE id = %s FOR UPDATE",
             (run_id,),
         ).fetchone()
         if not run:
@@ -102,7 +109,7 @@ def next_query(run_id: int) -> dict[str, Any] | None:
         if run["status"] == "cancel_requested":
             conn.execute(
                 """
-                UPDATE reference_run_queries
+                UPDATE market_run_tasks
                 SET status = 'cancelled', completed_at = now()
                 WHERE run_id = %s AND status = 'queued'
                 """,
@@ -110,7 +117,7 @@ def next_query(run_id: int) -> dict[str, Any] | None:
             )
             conn.execute(
                 """
-                UPDATE reference_runs
+                UPDATE market_runs
                 SET status = 'cancelled', completed_at = now(), updated_at = now()
                 WHERE id = %s
                 """,
@@ -120,12 +127,17 @@ def next_query(run_id: int) -> dict[str, Any] | None:
 
         row = conn.execute(
             """
-            SELECT rq.id, rq.query_id, q.query_text, q.ebay_domain, q.ebay_category_id
-            FROM reference_run_queries rq
-            JOIN search_queries q ON q.id = rq.query_id
-            WHERE rq.run_id = %s AND rq.status = 'queued'
-            ORDER BY q.position
-            FOR UPDATE OF rq SKIP LOCKED
+            SELECT
+                task.id,
+                task.query_id,
+                task.source,
+                q.query_text,
+                q.category
+            FROM market_run_tasks task
+            JOIN search_queries q ON q.id = task.query_id
+            WHERE task.run_id = %s AND task.status = 'queued'
+            ORDER BY q.position, task.id
+            FOR UPDATE OF task SKIP LOCKED
             LIMIT 1
             """,
             (run_id,),
@@ -134,7 +146,7 @@ def next_query(run_id: int) -> dict[str, Any] | None:
             return None
         conn.execute(
             """
-            UPDATE reference_run_queries
+            UPDATE market_run_tasks
             SET status = 'running', started_at = now(), error = ''
             WHERE id = %s
             """,
@@ -143,122 +155,103 @@ def next_query(run_id: int) -> dict[str, Any] | None:
         return dict(row)
 
 
-def save_result(run_id: int, run_query: dict[str, Any], data: dict[str, Any]) -> None:
-    results = data.get("organic_results") or []
-    if not isinstance(results, list):
-        results = []
-    search_metadata = data.get("search_metadata") or {}
-    search_information = data.get("search_information") or {}
-    reported_total = search_information.get("total_results")
-    serpapi_calls = int(data.get("_discovery_calls_used") or 0) + int(
-        data.get("_detail_calls_used") or 0
-    )
+def save_results(
+    run_id: int,
+    task: dict[str, Any],
+    results: list[dict[str, Any]],
+) -> None:
     unique_ids: set[str] = set()
-
     with connection() as conn:
-        for rank, raw in enumerate(results, start=1):
-            if not isinstance(raw, dict):
-                continue
-            item = normalized_result(raw)
-            unique_ids.add(item["product_id"])
+        for rank, item in enumerate(results, start=1):
+            unique_ids.add(item["source_item_id"])
             listing = conn.execute(
                 """
-                INSERT INTO reference_listings (
-                    product_id, title, url, image_url, price_value, price_raw, currency,
-                    condition_text, sold_date, shipping_text, seller, raw_result
+                INSERT INTO market_listings (
+                    source, source_item_id, title, url, image_url,
+                    price_status, price_value, price_raw, currency, price_basis,
+                    estimate_raw, sale_date, attribution, raw_result
                 )
                 VALUES (
-                    %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s
                 )
-                ON CONFLICT (product_id) DO UPDATE SET
+                ON CONFLICT (source, source_item_id) DO UPDATE SET
                     title = EXCLUDED.title,
-                    url = CASE WHEN EXCLUDED.url <> '' THEN EXCLUDED.url ELSE reference_listings.url END,
+                    url = EXCLUDED.url,
                     image_url = CASE
                         WHEN EXCLUDED.image_url <> '' THEN EXCLUDED.image_url
-                        ELSE reference_listings.image_url
+                        ELSE market_listings.image_url
                     END,
-                    price_value = COALESCE(EXCLUDED.price_value, reference_listings.price_value),
-                    price_raw = CASE
-                        WHEN EXCLUDED.price_raw <> '' THEN EXCLUDED.price_raw
-                        ELSE reference_listings.price_raw
-                    END,
-                    currency = CASE
-                        WHEN EXCLUDED.currency <> '' THEN EXCLUDED.currency
-                        ELSE reference_listings.currency
-                    END,
-                    condition_text = EXCLUDED.condition_text,
-                    sold_date = EXCLUDED.sold_date,
-                    shipping_text = EXCLUDED.shipping_text,
-                    seller = EXCLUDED.seller,
+                    price_status = EXCLUDED.price_status,
+                    price_value = EXCLUDED.price_value,
+                    price_raw = EXCLUDED.price_raw,
+                    currency = EXCLUDED.currency,
+                    price_basis = EXCLUDED.price_basis,
+                    estimate_raw = EXCLUDED.estimate_raw,
+                    sale_date = EXCLUDED.sale_date,
+                    attribution = EXCLUDED.attribution,
                     raw_result = EXCLUDED.raw_result,
                     last_seen_at = now()
                 RETURNING id
                 """,
                 (
-                    item["product_id"],
+                    item["source"],
+                    item["source_item_id"],
                     item["title"],
                     item["url"],
                     item["image_url"],
+                    item["price_status"],
                     item["price_value"],
                     item["price_raw"],
                     item["currency"],
-                    item["condition_text"],
-                    item["sold_date"],
-                    item["shipping_text"],
-                    Jsonb(item["seller"]),
+                    item["price_basis"],
+                    item["estimate_raw"],
+                    item["sale_date"],
+                    item["attribution"],
                     Jsonb(item["raw_result"]),
                 ),
             ).fetchone()
             conn.execute(
                 """
-                INSERT INTO listing_query_matches (
+                INSERT INTO market_listing_query_matches (
                     listing_id, query_id, first_run_id, last_run_id, best_rank
                 )
                 VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (listing_id, query_id) DO UPDATE SET
                     last_run_id = EXCLUDED.last_run_id,
-                    best_rank = LEAST(listing_query_matches.best_rank, EXCLUDED.best_rank),
+                    best_rank = LEAST(
+                        market_listing_query_matches.best_rank,
+                        EXCLUDED.best_rank
+                    ),
                     last_seen_at = now()
                 """,
-                (listing["id"], run_query["query_id"], run_id, run_id, rank),
+                (listing["id"], task["query_id"], run_id, run_id, rank),
             )
 
         conn.execute(
             """
-            UPDATE reference_run_queries
+            UPDATE market_run_tasks
             SET status = 'completed',
                 result_count = %s,
                 unique_count = %s,
-                serpapi_calls = %s,
-                reported_total_results = %s,
-                serpapi_search_id = %s,
-                raw_response = %s,
                 completed_at = now()
             WHERE id = %s
             """,
-            (
-                len(results),
-                len(unique_ids),
-                serpapi_calls,
-                reported_total if isinstance(reported_total, int) else None,
-                str(search_metadata.get("id") or ""),
-                Jsonb(data),
-                run_query["id"],
-            ),
+            (len(results), len(unique_ids), task["id"]),
         )
         refresh_run_stats(conn, run_id)
 
 
-def fail_query(run_id: int, run_query_id: int, error: str, serpapi_calls: int = 1) -> None:
+def fail_task(run_id: int, task_id: int, error: str) -> None:
     with connection() as conn:
         conn.execute(
             """
-            UPDATE reference_run_queries
-            SET status = 'failed', error = %s, serpapi_calls = %s, completed_at = now()
+            UPDATE market_run_tasks
+            SET status = 'failed', error = %s, completed_at = now()
             WHERE id = %s
             """,
-            (error[:1000], serpapi_calls, run_query_id),
+            (error[:1000], task_id),
         )
         refresh_run_stats(conn, run_id)
 
@@ -270,9 +263,8 @@ def refresh_run_stats(conn: Any, run_id: int) -> None:
             COUNT(*) FILTER (WHERE status IN ('completed', 'failed', 'cancelled')) AS completed,
             COUNT(*) FILTER (WHERE status = 'completed') AS successful,
             COUNT(*) FILTER (WHERE status = 'failed') AS failed,
-            COALESCE(SUM(result_count), 0) AS imported,
-            COALESCE(SUM(serpapi_calls), 0) AS api_calls_used
-        FROM reference_run_queries
+            COALESCE(SUM(result_count), 0) AS imported
+        FROM market_run_tasks
         WHERE run_id = %s
         """,
         (run_id,),
@@ -280,18 +272,17 @@ def refresh_run_stats(conn: Any, run_id: int) -> None:
     unique_row = conn.execute(
         """
         SELECT COUNT(DISTINCT listing_id) AS count
-        FROM listing_query_matches
+        FROM market_listing_query_matches
         WHERE last_run_id = %s OR first_run_id = %s
         """,
         (run_id, run_id),
     ).fetchone()
     conn.execute(
         """
-        UPDATE reference_runs
-        SET completed_calls = %s,
-            api_calls_used = %s,
-            successful_calls = %s,
-            failed_calls = %s,
+        UPDATE market_runs
+        SET completed_tasks = %s,
+            successful_tasks = %s,
+            failed_tasks = %s,
             imported_results = %s,
             unique_listings = %s,
             updated_at = now()
@@ -299,7 +290,6 @@ def refresh_run_stats(conn: Any, run_id: int) -> None:
         """,
         (
             int(counts["completed"]),
-            int(counts["api_calls_used"]),
             int(counts["successful"]),
             int(counts["failed"]),
             int(counts["imported"]),
@@ -312,11 +302,7 @@ def refresh_run_stats(conn: Any, run_id: int) -> None:
 def finish_run(run_id: int) -> None:
     with connection() as conn:
         run = conn.execute(
-            """
-            SELECT status, failed_calls
-            FROM reference_runs
-            WHERE id = %s
-            """,
+            "SELECT status, failed_tasks FROM market_runs WHERE id = %s",
             (run_id,),
         ).fetchone()
         if not run or run["status"] in {"cancelled", "failed"}:
@@ -324,17 +310,17 @@ def finish_run(run_id: int) -> None:
         pending = conn.execute(
             """
             SELECT COUNT(*) AS count
-            FROM reference_run_queries
+            FROM market_run_tasks
             WHERE run_id = %s AND status IN ('queued', 'running')
             """,
             (run_id,),
         ).fetchone()
         if int(pending["count"]) > 0:
             return
-        final_status = "completed_with_errors" if int(run["failed_calls"]) else "completed"
+        final_status = "completed_with_errors" if int(run["failed_tasks"]) else "completed"
         conn.execute(
             """
-            UPDATE reference_runs
+            UPDATE market_runs
             SET status = %s, completed_at = now(), updated_at = now()
             WHERE id = %s
             """,
@@ -342,60 +328,48 @@ def finish_run(run_id: int) -> None:
         )
 
 
-def process_run(run: dict[str, Any], key: str, interval: float) -> None:
+def process_run(run: dict[str, Any], interval: float, result_limit: int) -> None:
     run_id = int(run["id"])
-    LOG.info("Starte Referenzlauf %s mit %s geplanten Suchen", run_id, run["planned_calls"])
-    while not STOP:
-        run_query = next_query(run_id)
-        if not run_query:
-            finish_run(run_id)
-            return
-        heartbeat(
-            "running",
-            key_configured=True,
-            current_run_id=run_id,
-            message=run_query["query_text"],
-        )
-        try:
-            data = search_sold(
-                api_key=key,
-                query=run_query["query_text"],
-                ebay_domain=run_query["ebay_domain"],
-                category_id=run_query.get("ebay_category_id"),
-            )
-            save_result(run_id, run_query, data)
-            LOG.info("Suche abgeschlossen: %s", run_query["query_text"])
-        except Exception as exc:  # a failed query is recorded and the run continues
-            error = f"{type(exc).__name__}: {exc}"
-            LOG.exception("Suche fehlgeschlagen: %s", run_query["query_text"])
-            calls_used = exc.calls_used if isinstance(exc, SerpApiError) else 0
-            fail_query(run_id, int(run_query["id"]), error, calls_used)
-            provider_message = str(exc).lower()
-            broad_sold_preflight_failed = (
-                run_query["query_id"] == "meissen"
-                and "ebay hasn't returned any results for this query" in provider_message
-            )
-            quota_blocked = any(
-                token in provider_message for token in ("credit", "quota", "run out", "limit")
-            )
-            if isinstance(exc, SerpApiError) and (quota_blocked or broad_sold_preflight_failed):
-                if broad_sold_preflight_failed:
-                    error = (
-                        "SerpApi liefert fuer die breite Meissen-Kontrollsuche "
-                        "keine deutschen eBay-Sold-Daten. Lauf zum Schutz des Kontingents blockiert."
-                    )
-                with connection() as conn:
-                    conn.execute(
-                        """
-                        UPDATE reference_runs
-                        SET status = 'blocked', error = %s, updated_at = now()
-                        WHERE id = %s
-                        """,
-                        (error[:1000], run_id),
-                    )
+    LOG.info(
+        "Starte Marktpreislauf %s mit %s Quellenaufgaben",
+        run_id,
+        run["planned_tasks"],
+    )
+    session = build_session()
+    try:
+        while not STOP:
+            task = next_task(run_id)
+            if not task:
+                finish_run(run_id)
                 return
-        if not STOP:
-            time.sleep(interval)
+            source_label = SOURCE_LABELS.get(task["source"], task["source"])
+            heartbeat(
+                "running",
+                current_run_id=run_id,
+                message=f"{source_label}: {task['query_text']}",
+            )
+            try:
+                results = collect(
+                    task["source"],
+                    task["query_text"],
+                    limit=result_limit,
+                    session=session,
+                )
+                save_results(run_id, task, results)
+                LOG.info(
+                    "%s abgeschlossen: %s (%s Treffer)",
+                    source_label,
+                    task["query_text"],
+                    len(results),
+                )
+            except Exception as exc:  # one source failure must not stop the complete run
+                error = f"{type(exc).__name__}: {exc}"
+                LOG.exception("%s fehlgeschlagen: %s", source_label, task["query_text"])
+                fail_task(run_id, int(task["id"]), error)
+            if not STOP:
+                time.sleep(interval)
+    finally:
+        session.close()
 
 
 def main() -> None:
@@ -410,32 +384,20 @@ def main() -> None:
                 raise
             LOG.warning("Postgres ist noch nicht bereit; neuer Versuch in 2 Sekunden.")
             time.sleep(2)
+
     poll_seconds = max(2, env_int("WORKER_POLL_SECONDS", 5))
-    interval = max(72.0, env_float("SERPAPI_REQUEST_INTERVAL_SECONDS", 75.0))
-    max_searches = env_int("MAX_SEARCHES_PER_RUN", EXPECTED_QUERY_COUNT)
-    if max_searches != EXPECTED_QUERY_COUNT:
-        raise RuntimeError(
-            f"MAX_SEARCHES_PER_RUN muss fuer den Pilot {EXPECTED_QUERY_COUNT} sein."
-        )
+    interval = max(1.0, env_float("MARKET_REQUEST_INTERVAL_SECONDS", 2.0))
+    result_limit = max(5, min(50, env_int("MARKET_RESULTS_PER_SOURCE", 30)))
 
     while not STOP:
-        key = serpapi_key()
-        if not key:
-            heartbeat(
-                "waiting_for_key",
-                key_configured=False,
-                message="SERPAPI_API_KEY_PRIMARY fehlt",
-            )
-            time.sleep(poll_seconds)
-            continue
         run = claim_run()
         if not run:
-            heartbeat("idle", key_configured=True)
+            heartbeat("idle", message="Bereit fuer Marktpreislauf")
             time.sleep(poll_seconds)
             continue
-        process_run(run, key, interval)
+        process_run(run, interval, result_limit)
 
-    heartbeat("stopped", key_configured=bool(serpapi_key()))
+    heartbeat("stopped")
 
 
 if __name__ == "__main__":

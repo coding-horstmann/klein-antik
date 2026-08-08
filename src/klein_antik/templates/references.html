@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Referenzen · klein antik{% endblock %}
+{% block title %}Marktpreise · klein antik{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
-    <h1>Referenzen</h1>
-    <p>{{ total }} gefilterte Listings</p>
+    <h1>Marktpreise</h1>
+    <p>{{ total }} gefilterte Auktionsobjekte</p>
   </div>
   <div class="view-switch" aria-label="Referenzansicht">
     <a class="active" href="{{ url_for('references') }}">Listings</a>
@@ -12,12 +12,12 @@
   </div>
 </div>
 
-<section class="stats-strip" aria-label="Referenzstatus">
+<section class="stats-strip" aria-label="Marktpreisstatus">
   <div><strong>{{ stats.total }}</strong><span>Gesamt</span></div>
-  <div><strong>{{ stats.unreviewed }}</strong><span>Ungeprüft</span></div>
-  <div class="positive"><strong>{{ stats.usable }}</strong><span>Brauchbar</span></div>
-  <div class="warning"><strong>{{ stats.unclear }}</strong><span>Unklar</span></div>
-  <div class="negative"><strong>{{ stats.unusable }}</strong><span>Unbrauchbar</span></div>
+  <div class="positive"><strong>{{ stats.sold }}</strong><span>Verkauft</span></div>
+  <div><strong>{{ stats.ask }}</strong><span>Angebote</span></div>
+  <div class="warning"><strong>{{ stats.unsold }}</strong><span>Unverkauft</span></div>
+  <div class="positive"><strong>{{ stats.usable }}</strong><span>Geprüft brauchbar</span></div>
 </section>
 
 <nav class="category-tabs" aria-label="Kategorien">
@@ -34,8 +34,20 @@
   {% if filters.category %}<input type="hidden" name="category" value="{{ filters.category }}">{% endif %}
   <label class="search-field">
     <i data-lucide="search" aria-hidden="true"></i>
-    <input type="search" name="q" value="{{ filters.q }}" placeholder="Titel oder eBay-ID">
+    <input type="search" name="q" value="{{ filters.q }}" placeholder="Titel oder Quellen-ID">
   </label>
+  <select name="price_status" aria-label="Preisart">
+    <option value="">Alle Preisarten</option>
+    {% for value, label in price_statuses.items() %}
+      <option value="{{ value }}" {{ 'selected' if filters.price_status == value else '' }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="source" aria-label="Quelle">
+    <option value="">Alle Quellen</option>
+    {% for value, label in source_labels.items() %}
+      <option value="{{ value }}" {{ 'selected' if filters.source == value else '' }}>{{ label }}</option>
+    {% endfor %}
+  </select>
   <select name="status" aria-label="Prüfstatus">
     <option value="">Alle Prüfstatus</option>
     {% for value, label in content_statuses.items() %}
@@ -64,23 +76,36 @@
           {% else %}
             <div class="image-missing"><i data-lucide="image-off" aria-hidden="true"></i></div>
           {% endif %}
-          <span class="price-badge">{{ format_money(listing.price_value, listing.currency) }}</span>
+          <span class="price-badge">
+            {% if listing.price_value is not none %}
+              {{ format_money(listing.price_value, listing.currency) }}
+            {% elif listing.estimate_raw %}
+              {{ listing.estimate_raw }}
+            {% else %}
+              Preis fehlt
+            {% endif %}
+          </span>
         </div>
         <div class="listing-body">
           <div class="listing-title-row">
             <h2>{{ listing.title }}</h2>
             {% if listing.url %}
-              <a class="icon-link" href="{{ listing.url }}" target="_blank" rel="noreferrer" title="Bei eBay öffnen">
+              <a class="icon-link" href="{{ listing.url }}" target="_blank" rel="noreferrer" title="Quelle öffnen">
                 <i data-lucide="external-link" aria-hidden="true"></i>
-                <span class="sr-only">Bei eBay öffnen</span>
+                <span class="sr-only">Quelle öffnen</span>
               </a>
             {% endif %}
           </div>
           <p class="listing-meta">
-            {{ listing.condition_text or 'Zustand unbekannt' }}
-            {% if listing.sold_date %}<span>{{ listing.sold_date }}</span>{% endif %}
-            <span>ID {{ listing.product_id }}</span>
+            <span class="source-badge">{{ source_labels.get(listing.source, listing.source) }}</span>
+            <span class="price-status-badge price-status-{{ listing.price_status }}">{{ price_statuses.get(listing.price_status, listing.price_status) }}</span>
+            <span>{{ price_basis_labels.get(listing.price_basis, listing.price_basis) }}</span>
+            {% if listing.sale_date %}<span>{{ listing.sale_date }}</span>{% endif %}
+            <span>ID {{ listing.source_item_id }}</span>
           </p>
+          {% if listing.attribution == 'uncertain' %}
+            <p class="attribution-warning">Zuschreibung laut Quelle unsicher</p>
+          {% endif %}
           <div class="query-chips">
             {% for query in listing.query_texts[:3] %}<span>{{ query }}</span>{% endfor %}
             {% if listing.query_texts|length > 3 %}<span>+{{ listing.query_texts|length - 3 }}</span>{% endif %}
@@ -141,8 +166,7 @@
 {% else %}
   <section class="empty-state">
     <i data-lucide="archive" aria-hidden="true"></i>
-    <h2>Noch keine Referenzen</h2>
+    <h2>Noch keine Marktpreise</h2>
   </section>
 {% endif %}
 {% endblock %}
-

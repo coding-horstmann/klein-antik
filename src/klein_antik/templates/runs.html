@@ -4,16 +4,16 @@
 <div class="page-heading">
   <div>
     <h1>Läufe</h1>
-    <p>Indexierte eBay-Verkäufe</p>
+    <p>Öffentliche Auktionsarchive und Händlerergebnisse</p>
   </div>
   <button
     class="button primary"
     id="start-run"
     type="button"
-    {% if not worker or not worker.online or not worker.api_key_configured %}disabled{% endif %}
+    {% if not worker or not worker.online %}disabled{% endif %}
   >
     <i data-lucide="play" aria-hidden="true"></i>
-    Pilotlauf starten
+    110 Begriffe durchsuchen
   </button>
 </div>
 
@@ -25,26 +25,24 @@
     </strong>
   </div>
   <div>
-    <span>SerpApi-Key</span>
-    <strong class="{{ 'ok' if worker and worker.api_key_configured else 'bad' }}">
-      {{ 'Hinterlegt' if worker and worker.api_key_configured else 'Fehlt' }}
-    </strong>
+    <span>API-Kosten</span>
+    <strong class="ok">Keine</strong>
   </div>
   <div>
     <span>Suchbegriffe</span>
-    <strong>{{ expected_calls }}</strong>
+    <strong>{{ expected_queries }}</strong>
   </div>
   <div>
-    <span>Seiten je Begriff</span>
-    <strong>1</strong>
+    <span>Quellenabfragen</span>
+    <strong>{{ expected_tasks }}</strong>
   </div>
   <div>
-    <span>Markt</span>
-    <strong>eBay Deutschland</strong>
+    <span>Quellen</span>
+    <strong>4 Auktionshäuser</strong>
   </div>
   <div>
-    <span>SerpApi-Calls</span>
-    <strong>{{ expected_calls }}–{{ expected_calls * 2 }}</strong>
+    <span>Preisarten</span>
+    <strong>Verkauf · Angebot</strong>
   </div>
 </section>
 
@@ -59,15 +57,14 @@
         <div class="run-progress-block">
           <div class="run-topline">
             <strong class="status status-{{ run.status }}">{{ run_labels.get(run.status, run.status) }}</strong>
-            <span>{{ run.completed_calls }} / {{ run.planned_calls }} Begriffe</span>
+            <span>{{ run.completed_tasks }} / {{ run.planned_tasks }} Quellenabfragen</span>
           </div>
           <div class="progress-track">
-            <span style="width: {{ (run.completed_calls * 100 / run.planned_calls) if run.planned_calls else 0 }}%"></span>
+            <span style="width: {{ (run.completed_tasks * 100 / run.planned_tasks) if run.planned_tasks else 0 }}%"></span>
           </div>
           <div class="run-metrics">
-            <span>{{ run.successful_calls }} erfolgreich</span>
-            <span>{{ run.failed_calls }} fehlgeschlagen</span>
-            <span>{{ run.api_calls_used }} SerpApi-Calls</span>
+            <span>{{ run.successful_tasks }} erfolgreich</span>
+            <span>{{ run.failed_tasks }} fehlgeschlagen</span>
             <span>{{ run.imported_results }} Ergebnisse</span>
             <span>{{ run.unique_listings }} eindeutig</span>
           </div>
@@ -92,12 +89,12 @@
   </section>
 {% endif %}
 
-{% if failed_queries %}
+{% if failed_tasks %}
   <section class="failed-queries">
     <h2>Fehlgeschlagene Suchen</h2>
-    {% for failure in failed_queries %}
+    {% for failure in failed_tasks %}
       <div>
-        <strong>#{{ failure.run_id }} · {{ failure.query_text }}</strong>
+        <strong>#{{ failure.run_id }} · {{ source_labels.get(failure.source, failure.source) }} · {{ failure.query_text }}</strong>
         <span>{{ failure.error }}</span>
       </div>
     {% endfor %}

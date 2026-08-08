@@ -173,11 +173,18 @@ a {
 .stats-strip,
 .run-readiness {
   display: grid;
-  grid-template-columns: repeat(5, minmax(100px, 1fr));
   margin-bottom: 22px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
+}
+
+.stats-strip {
+  grid-template-columns: repeat(5, minmax(100px, 1fr));
+}
+
+.run-readiness {
+  grid-template-columns: repeat(6, minmax(100px, 1fr));
 }
 
 .stats-strip > div,
@@ -250,7 +257,7 @@ a {
 
 .filter-bar {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) 190px 190px auto;
+  grid-template-columns: minmax(220px, 1fr) repeat(4, minmax(145px, 180px)) auto;
   gap: 10px;
   margin-bottom: 20px;
 }
@@ -449,6 +456,43 @@ textarea:hover {
 
 .listing-meta span {
   overflow-wrap: anywhere;
+}
+
+.source-badge,
+.price-status-badge,
+.source-table-label {
+  display: inline-block;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.price-status-sold {
+  background: var(--green-dark);
+  color: #b8efd4;
+}
+
+.price-status-unsold {
+  background: var(--red-dark);
+  color: #ffc0c0;
+}
+
+.price-status-ask,
+.price-status-estimate,
+.price-status-current_bid {
+  background: var(--amber-dark);
+  color: #f5d795;
+}
+
+.attribution-warning {
+  margin: -3px 0 11px;
+  color: var(--amber);
+  font-size: 12px;
+}
+
+.source-table-label + .source-table-label {
+  margin-top: 4px;
 }
 
 .query-chips {
@@ -814,7 +858,11 @@ textarea:hover {
   }
 
   .filter-bar {
-    grid-template-columns: minmax(220px, 1fr) 180px 180px;
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+  }
+
+  .search-field {
+    grid-column: 1 / -1;
   }
 
   .filter-bar .button {
