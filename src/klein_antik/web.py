@@ -499,6 +499,7 @@ def market_stats(conn: Any) -> dict[str, int]:
             COUNT(*) FILTER (WHERE l.price_status = 'sold') AS sold,
             COUNT(*) FILTER (WHERE l.price_status = 'ask') AS ask,
             COUNT(*) FILTER (WHERE l.price_status = 'unsold') AS unsold,
+            COUNT(*) FILTER (WHERE l.price_status = 'unknown') AS unknown,
             COUNT(*) FILTER (
                 WHERE COALESCE(r.content_status, 'unreviewed') = 'usable'
             ) AS usable
