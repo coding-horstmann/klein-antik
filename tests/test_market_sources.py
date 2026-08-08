@@ -85,6 +85,14 @@ class MarketSourceTests(unittest.TestCase):
         )
         self.assertEqual(search_query_for("N.E. From Silber"), "N.E. From")
         self.assertEqual(
+            search_query_for("Osiris Jugendstil Zinn"),
+            "Osiris pewter",
+        )
+        self.assertEqual(
+            search_query_for("Bing & Grøndahl Figur"),
+            "Bing Grondahl",
+        )
+        self.assertEqual(
             search_query_for("WMF Jugendstil Karaffe"),
             "wmf art nouveau carafe",
         )

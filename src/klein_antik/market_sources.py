@@ -480,6 +480,7 @@ GENERIC_QUERY_WORDS = {
     "vase",
     "versilbert",
     "vintage",
+    "zinn",
 }
 
 JEWELRY_WORDS = {
@@ -546,11 +547,17 @@ SEARCH_QUERY_OVERRIDES = {
     "skandinavisches designglas": "Scandinavian glass",
     "aeltere finnische leuchte": "Finnish lamp",
     "n e from silber": "N.E. From",
+    "marcel boucher schmuck": "Marcel Boucher",
+    "osiris jugendstil zinn": "Osiris pewter",
+    "bing grondahl figur": "Bing Grondahl",
+    "hagenauer wien figur": "Hagenauer",
+    "gunnar cyren designobjekt": "Gunnar Cyren",
 }
 
 RELEVANCE_ANCHOR_OVERRIDES = {
     "crown trifari": ("trifari",),
     "schreiner new york schmuck": ("schreiner",),
+    "hagenauer wien figur": ("hagenauer",),
 }
 
 SEARCH_DROP_WORDS = {"numbered", "original", "signed", "signierter", "vintage"}
@@ -577,6 +584,7 @@ SEARCH_TRANSLATIONS = {
     "tafelaufsatz": ("centerpiece",),
     "tablett": ("tray",),
     "versilbert": ("silverplate",),
+    "zinn": ("pewter",),
 }
 
 OBJECT_WORDS = {
@@ -758,7 +766,21 @@ def _clean_text(value: str) -> str:
 
 
 def _normalize(value: str) -> str:
-    value = value.replace("ß", "ss").replace("ẞ", "SS")
+    translations = str.maketrans(
+        {
+            "ß": "ss",
+            "ẞ": "SS",
+            "ø": "o",
+            "Ø": "O",
+            "æ": "ae",
+            "Æ": "AE",
+            "œ": "oe",
+            "Œ": "OE",
+            "ł": "l",
+            "Ł": "L",
+        }
+    )
+    value = value.translate(translations)
     decomposed = unicodedata.normalize("NFKD", value)
     ascii_value = "".join(character for character in decomposed if not unicodedata.combining(character))
     return re.sub(r"[^a-z0-9]+", " ", ascii_value.lower()).strip()
