@@ -103,6 +103,31 @@
             {% for query in listing.query_texts[:3] %}<span>{{ query }}</span>{% endfor %}
             {% if listing.query_texts|length > 3 %}<span>+{{ listing.query_texts|length - 3 }}</span>{% endif %}
           </div>
+          {% if listing.best_match_id %}
+            <section class="best-reference" aria-label="Bester Marktpreis-Abgleich">
+              <div class="best-reference-heading">
+                <span>Beste Referenz</span>
+                <strong>{{ '%.0f'|format(listing.best_match_score * 100) }} % Abgleich</strong>
+              </div>
+              <a href="{{ listing.best_market_url }}" target="_blank" rel="noreferrer" title="Marktpreis-Referenz oeffnen">
+                {{ listing.best_market_title }}
+                <i data-lucide="external-link" aria-hidden="true"></i>
+              </a>
+              <p>
+                <span class="source-badge">{{ source_labels.get(listing.best_market_source, listing.best_market_source) }}</span>
+                <strong>{{ format_money(listing.best_market_price_value, listing.best_market_currency) }}</strong>
+              </p>
+              <small>
+                {{ price_statuses.get(listing.best_market_price_status, listing.best_market_price_status) }}
+                &middot; {{ price_basis_labels.get(listing.best_market_price_basis, listing.best_market_price_basis) }}
+                &middot; Bild {{ '%.0f'|format(listing.best_match_visual_score * 100) }} %
+              </small>
+            </section>
+          {% elif listing.image_match_status in ('queued', 'running') %}
+            <p class="match-pending">Bildabgleich laeuft noch.</p>
+          {% elif listing.image_match_status == 'completed' %}
+            <p class="match-pending">Kein geeigneter Marktpreis-Abgleich gefunden.</p>
+          {% endif %}
           <div class="review-controls single">
             <label>
               <span>Prüfstatus</span>

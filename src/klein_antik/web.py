@@ -384,13 +384,47 @@ def create_app() -> Flask:
                     COALESCE(r.review_status, 'unreviewed') AS review_status,
                     COALESCE(r.tags, ARRAY[]::TEXT[]) AS tags,
                     COALESCE(r.note, '') AS note,
+                    best_match.id AS best_match_id,
+                    best_match.score AS best_match_score,
+                    best_match.visual_score AS best_match_visual_score,
+                    best_market.title AS best_market_title,
+                    best_market.url AS best_market_url,
+                    best_market.price_value AS best_market_price_value,
+                    best_market.currency AS best_market_currency,
+                    best_market.source AS best_market_source,
+                    best_market.price_status AS best_market_price_status,
+                    best_market.price_basis AS best_market_price_basis,
+                    match_task.status AS image_match_status,
                     array_agg(DISTINCT q.query_text ORDER BY q.query_text) AS query_texts
                 FROM deal_listings d
                 LEFT JOIN deal_listing_reviews r ON r.listing_id = d.id
+                LEFT JOIN image_matches best_match
+                    ON best_match.deal_listing_id = d.id
+                    AND best_match.rank = 1
+                    AND best_match.last_run_id = (
+                        SELECT id
+                        FROM image_match_runs
+                        WHERE status NOT IN ('cancelled', 'failed')
+                        ORDER BY id DESC
+                        LIMIT 1
+                    )
+                LEFT JOIN market_listings best_market ON best_market.id = best_match.market_listing_id
+                LEFT JOIN image_match_tasks match_task
+                    ON match_task.deal_listing_id = d.id
+                    AND match_task.run_id = (
+                        SELECT id
+                        FROM image_match_runs
+                        WHERE status NOT IN ('cancelled', 'failed')
+                        ORDER BY id DESC
+                        LIMIT 1
+                    )
                 JOIN deal_listing_query_matches qm ON qm.listing_id = d.id
                 JOIN search_queries q ON q.id = qm.query_id
                 WHERE {where_sql}
-                GROUP BY d.id, r.listing_id, r.review_status, r.tags, r.note
+                GROUP BY
+                    d.id, r.listing_id, r.review_status, r.tags, r.note,
+                    best_match.id, best_match.score, best_match.visual_score,
+                    best_market.id, match_task.status
                 ORDER BY d.price_value ASC NULLS LAST, d.last_seen_at DESC, d.id DESC
                 LIMIT %s OFFSET %s
                 """,

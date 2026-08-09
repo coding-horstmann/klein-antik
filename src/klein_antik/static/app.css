@@ -649,6 +649,71 @@ textarea:hover {
   white-space: nowrap;
 }
 
+.best-reference {
+  margin: 0 0 13px;
+  padding: 11px;
+  border: 1px solid #2d6554;
+  border-radius: var(--radius);
+  background: #10221c;
+}
+
+.best-reference-heading,
+.best-reference p {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+}
+
+.best-reference-heading {
+  color: #b8efd4;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.best-reference-heading strong {
+  color: #d2f7e2;
+  font-size: 12px;
+}
+
+.best-reference a {
+  display: -webkit-box;
+  margin: 7px 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.best-reference a svg {
+  display: inline;
+  width: 13px;
+  height: 13px;
+  margin-left: 4px;
+  vertical-align: -2px;
+}
+
+.best-reference p strong {
+  font-size: 13px;
+}
+
+.best-reference small,
+.match-pending {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.match-pending {
+  margin-bottom: 13px;
+}
+
 .review-controls {
   display: grid;
   grid-template-columns: 1fr 1fr;
