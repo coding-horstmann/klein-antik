@@ -70,6 +70,15 @@ class ImageMatcherTests(unittest.TestCase):
 
         self.assertEqual(score["score"], 0.0)
 
+    def test_porcelain_object_types_and_non_porcelain_noise_are_rejected(self) -> None:
+        feature = extract_features(image_payload(background="#101820", accent="#d6612c"))
+        pot = {**feature, "title": "Meissen Schwanenservice Kaffeepot"}
+        figure = {**feature, "title": "Meissen porcelain figure"}
+        pen = {**feature, "title": "Meissen Kugelschreiber Gold"}
+
+        self.assertEqual(compare_features(pot, figure)["score"], 0.0)
+        self.assertEqual(compare_features(pen, figure)["score"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

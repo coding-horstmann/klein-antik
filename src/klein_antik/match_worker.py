@@ -35,16 +35,22 @@ GENERIC_TOKENS = {
     "vase", "vintage",
 }
 OBJECT_TOKENS = {
+    "bowl": {"bowl", "schussel", "tureen"},
+    "box": {"box", "dose", "deckeldose"},
     "bracelet": {"armband", "bangle", "bracelet"},
     "brooch": {"brooch", "brosche"},
     "earrings": {"earring", "earrings", "ohrclip", "ohrclips", "ohrclipse", "ohrring", "ohrringe"},
     "figure": {"figur", "figure", "figurine", "skulptur", "sculpture"},
     "lamp": {"lampe", "lamp", "leuchte", "leuchten"},
     "necklace": {"chain", "collier", "kette", "necklace"},
+    "plate": {"plate", "platten", "teller"},
+    "pot": {"coffee", "kaffeepot", "kanne", "pot", "teapot"},
     "ring": {"ring"},
+    "service": {"service", "set"},
     "tray": {"tablett", "tray"},
     "vase": {"vase"},
 }
+NON_COLLECTIBLE_TOKENS = {"kugelschreiber", "rollerpen", "fountainpen", "pen"}
 
 
 def _stop(_signum: int, _frame: Any) -> None:
@@ -70,7 +76,7 @@ def _object_kinds(value: str) -> set[str]:
         if any(
             token == marker
             or token in {f"{marker}s", f"{marker}es"}
-            or (len(marker) >= 5 and token.endswith(marker))
+            or (len(marker) >= 4 and marker != "ring" and token.endswith(marker))
             for token in tokens
             for marker in markers
         )
@@ -183,11 +189,18 @@ def compare_features(
     shared_anchor = deal_tokens & reference_tokens
     deal_objects = _object_kinds(str(deal["title"]))
     reference_objects = _object_kinds(str(reference["title"]))
+    deal_all_tokens = set(re.findall(r"[a-z0-9]{3,}", str(deal["title"]).lower()))
+    reference_all_tokens = set(re.findall(r"[a-z0-9]{3,}", str(reference["title"]).lower()))
     object_compatible = not (
         deal_objects and reference_objects and not (deal_objects & reference_objects)
     )
     visually_identical = visual_score >= 0.985
-    if not object_compatible or (not shared_anchor and not visually_identical):
+    if (
+        deal_all_tokens & NON_COLLECTIBLE_TOKENS
+        or reference_all_tokens & NON_COLLECTIBLE_TOKENS
+        or not object_compatible
+        or (not shared_anchor and not visually_identical)
+    ):
         return {
             "score": 0.0,
             "visual_score": round(visual_score, 6),
