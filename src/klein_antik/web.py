@@ -407,6 +407,13 @@ def create_app() -> Flask:
             failed_tasks=[dict(row) for row in failed_tasks],
             expected_queries=EXPECTED_QUERY_COUNT,
             expected_tasks=expected_market_tasks(),
+            scheduled_sources=len(
+                {
+                    source
+                    for query in load_queries()
+                    for source in sources_for_category(query["category"])
+                }
+            ),
             market_pages=max(1, min(5, env_int("MARKET_PAGES_PER_SOURCE", 2))),
         )
 
