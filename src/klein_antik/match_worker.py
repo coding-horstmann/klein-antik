@@ -67,7 +67,13 @@ def _object_kinds(value: str) -> set[str]:
     return {
         kind
         for kind, markers in OBJECT_TOKENS.items()
-        if tokens & markers
+        if any(
+            token == marker
+            or token in {f"{marker}s", f"{marker}es"}
+            or (len(marker) >= 5 and token.endswith(marker))
+            for token in tokens
+            for marker in markers
+        )
     }
 
 

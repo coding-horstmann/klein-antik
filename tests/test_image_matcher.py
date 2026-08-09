@@ -61,6 +61,15 @@ class ImageMatcherTests(unittest.TestCase):
         self.assertGreater(score["visual_score"], 0.90)
         self.assertEqual(score["score"], 0.0)
 
+    def test_object_filter_recognizes_compounds_and_plurals(self) -> None:
+        feature = extract_features(image_payload(background="#101820", accent="#d6612c"))
+        necklace = {**feature, "title": "Miriam Haskell Halskette"}
+        bracelet = {**feature, "title": "Miriam Haskell bracelets"}
+
+        score = compare_features(necklace, bracelet)
+
+        self.assertEqual(score["score"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
