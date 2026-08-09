@@ -10,6 +10,8 @@ from psycopg.types.json import Jsonb
 
 from .config import env_float, env_int
 from .db import connection, init_schema
+from .deal_worker import claim_run as claim_deal_run
+from .deal_worker import process_run as process_deal_run
 from .market_sources import SOURCE_LABELS, build_session, collect
 
 
@@ -29,7 +31,8 @@ def _stop(_signum: int, _frame: Any) -> None:
 def heartbeat(
     state: str,
     *,
-    current_run_id: int | None = None,
+    current_market_run_id: int | None = None,
+    current_deal_run_id: int | None = None,
     message: str = "",
 ) -> None:
     with connection() as conn:
@@ -37,18 +40,19 @@ def heartbeat(
             """
             INSERT INTO worker_status (
                 name, state, api_key_configured, current_run_id,
-                current_market_run_id, message, last_seen_at
+                current_market_run_id, current_deal_run_id, message, last_seen_at
             )
-            VALUES ('market-importer', %s, TRUE, NULL, %s, %s, now())
+            VALUES ('market-importer', %s, TRUE, NULL, %s, %s, %s, now())
             ON CONFLICT (name) DO UPDATE SET
                 state = EXCLUDED.state,
                 api_key_configured = TRUE,
                 current_run_id = NULL,
                 current_market_run_id = EXCLUDED.current_market_run_id,
+                current_deal_run_id = EXCLUDED.current_deal_run_id,
                 message = EXCLUDED.message,
                 last_seen_at = now()
             """,
-            (state, current_run_id, message[:500]),
+            (state, current_market_run_id, current_deal_run_id, message[:500]),
         )
 
 
@@ -345,7 +349,7 @@ def process_run(run: dict[str, Any], interval: float, result_limit: int) -> None
             source_label = SOURCE_LABELS.get(task["source"], task["source"])
             heartbeat(
                 "running",
-                current_run_id=run_id,
+                current_market_run_id=run_id,
                 message=f"{source_label}: {task['query_text']}",
             )
             try:
@@ -388,14 +392,26 @@ def main() -> None:
     poll_seconds = max(2, env_int("WORKER_POLL_SECONDS", 5))
     interval = max(1.0, env_float("MARKET_REQUEST_INTERVAL_SECONDS", 2.0))
     result_limit = max(5, min(50, env_int("MARKET_RESULTS_PER_SOURCE", 30)))
+    deal_interval = max(1.0, env_float("EBAY_REQUEST_INTERVAL_SECONDS", 1.1))
+    deal_result_limit = max(5, min(50, env_int("EBAY_RESULTS_PER_QUERY", 50)))
 
     while not STOP:
         run = claim_run()
-        if not run:
-            heartbeat("idle", message="Bereit fuer Marktpreislauf")
-            time.sleep(poll_seconds)
+        if run:
+            process_run(run, interval, result_limit)
             continue
-        process_run(run, interval, result_limit)
+        deal_run = claim_deal_run()
+        if deal_run:
+            process_deal_run(
+                deal_run,
+                interval=deal_interval,
+                result_limit=deal_result_limit,
+                heartbeat=heartbeat,
+                should_stop=lambda: STOP,
+            )
+            continue
+        heartbeat("idle", message="Bereit fuer Marktpreis- oder Deal-Lauf")
+        time.sleep(poll_seconds)
 
     heartbeat("stopped")
 

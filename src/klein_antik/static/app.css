@@ -262,6 +262,11 @@ a {
   margin-bottom: 20px;
 }
 
+.deal-filter-bar {
+  grid-template-columns: minmax(220px, 1fr) minmax(160px, 220px) auto;
+  max-width: 720px;
+}
+
 .search-field {
   position: relative;
 }
@@ -519,6 +524,10 @@ textarea:hover {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 9px;
+}
+
+.review-controls.single {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .review-controls label > span,

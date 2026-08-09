@@ -12,6 +12,7 @@ from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 from .catalog import EXPECTED_QUERY_COUNT, category_options, load_queries
 from .db import connection, init_schema
+from .ebay_active import credentials_configured
 from .market_sources import SOURCE_LABELS, sources_for_category
 
 
@@ -42,6 +43,22 @@ REVIEW_TAGS = {
     "price_missing": "Preis fehlt",
     "uncertain_attribution": "Zuschreibung unsicher",
     "duplicate": "Dublette",
+}
+DEAL_REVIEW_STATUSES = {
+    "unreviewed": "Ungeprüft",
+    "candidate": "Kandidat",
+    "checked": "Geprüft",
+    "skip": "Verwerfen",
+}
+DEAL_REVIEW_TAGS = {
+    "needs_match": "Abgleich nötig",
+    "condition": "Zustand prüfen",
+    "bundle": "Konvolut",
+    "unclear": "Unklare Zuschreibung",
+    "duplicate": "Dublette",
+}
+DEAL_SOURCE_LABELS = {
+    "ebay_active": "eBay DE · Privat",
 }
 PRICE_STATUSES = {
     "sold": "Verkauft",
@@ -119,6 +136,9 @@ def create_app() -> Flask:
             "use_statuses": USE_STATUSES,
             "query_statuses": QUERY_STATUSES,
             "review_tags": REVIEW_TAGS,
+            "deal_review_statuses": DEAL_REVIEW_STATUSES,
+            "deal_review_tags": DEAL_REVIEW_TAGS,
+            "deal_source_labels": DEAL_SOURCE_LABELS,
             "price_statuses": PRICE_STATUSES,
             "price_basis_labels": PRICE_BASIS_LABELS,
             "source_labels": SOURCE_LABELS,
@@ -314,12 +334,222 @@ def create_app() -> Flask:
 
     @app.get("/deals")
     def deals() -> Any:
+        category = request.args.get("category", "").strip()
+        review_status = request.args.get("status", "").strip()
+        search = request.args.get("q", "").strip()
+        page = max(1, min(10000, request.args.get("page", 1, type=int)))
+        page_size = 36
+        where = ["TRUE"]
+        params: list[Any] = []
+        if category:
+            where.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM deal_listing_query_matches dqm
+                    JOIN search_queries dq ON dq.id = dqm.query_id
+                    WHERE dqm.listing_id = d.id AND dq.category = %s
+                )
+                """
+            )
+            params.append(category)
+        if review_status in DEAL_REVIEW_STATUSES:
+            where.append("COALESCE(r.review_status, 'unreviewed') = %s")
+            params.append(review_status)
+        if search:
+            where.append("(d.title ILIKE %s OR d.source_item_id ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%"])
+        where_sql = " AND ".join(where)
+
+        with connection() as conn:
+            total_row = conn.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM deal_listings d
+                LEFT JOIN deal_listing_reviews r ON r.listing_id = d.id
+                WHERE {where_sql}
+                """,
+                params,
+            ).fetchone()
+            rows = conn.execute(
+                f"""
+                SELECT
+                    d.*,
+                    COALESCE(r.review_status, 'unreviewed') AS review_status,
+                    COALESCE(r.tags, ARRAY[]::TEXT[]) AS tags,
+                    COALESCE(r.note, '') AS note,
+                    array_agg(DISTINCT q.query_text ORDER BY q.query_text) AS query_texts
+                FROM deal_listings d
+                LEFT JOIN deal_listing_reviews r ON r.listing_id = d.id
+                JOIN deal_listing_query_matches qm ON qm.listing_id = d.id
+                JOIN search_queries q ON q.id = qm.query_id
+                WHERE {where_sql}
+                GROUP BY d.id, r.listing_id, r.review_status, r.tags, r.note
+                ORDER BY d.price_value ASC NULLS LAST, d.last_seen_at DESC, d.id DESC
+                LIMIT %s OFFSET %s
+                """,
+                [*params, page_size, (page - 1) * page_size],
+            ).fetchall()
+            run_rows = conn.execute(
+                "SELECT * FROM deal_runs ORDER BY id DESC LIMIT 8"
+            ).fetchall()
+            worker = conn.execute(
+                """
+                SELECT *, last_seen_at > now() - interval '90 seconds' AS online
+                FROM worker_status
+                WHERE name = 'market-importer'
+                """
+            ).fetchone()
+            stats = deal_stats(conn)
+
+        total = int(total_row["count"]) if total_row else 0
         return render_template(
-            "empty.html",
+            "deals.html",
             active_tab="deals",
-            title="Deals",
-            empty_text="Noch keine Deals vorhanden.",
+            listings=[dict(row) for row in rows],
+            stats=stats,
+            total=total,
+            page=page,
+            pages=max(1, (total + page_size - 1) // page_size),
+            filters={
+                "category": category,
+                "status": review_status,
+                "q": search,
+            },
+            runs=[dict(row) for row in run_rows],
+            worker=dict(worker) if worker else None,
+            credentials_configured=credentials_configured(),
+            has_active_run=any(
+                run["status"] in {"queued", "running", "cancel_requested"}
+                for run in run_rows
+            ),
         )
+
+    @app.post("/api/deals/runs/start")
+    @json_endpoint
+    def start_deal_run() -> Any:
+        if not credentials_configured():
+            return jsonify(
+                {"error": "EBAY_CLIENT_ID und EBAY_CLIENT_SECRET sind im Klein-Antik-Importer nicht gesetzt."}
+            ), 409
+        with connection() as conn:
+            worker = conn.execute(
+                """
+                SELECT last_seen_at > now() - interval '90 seconds' AS online
+                FROM worker_status
+                WHERE name = 'market-importer'
+                """
+            ).fetchone()
+            if not worker or not worker["online"]:
+                return jsonify({"error": "Der Importer ist nicht erreichbar."}), 409
+            active = conn.execute(
+                """
+                SELECT id
+                FROM market_runs
+                WHERE status IN ('queued', 'running', 'cancel_requested')
+                UNION ALL
+                SELECT id
+                FROM deal_runs
+                WHERE status IN ('queued', 'running', 'cancel_requested')
+                LIMIT 1
+                """
+            ).fetchone()
+            if active:
+                return jsonify({"error": "Es läuft bereits ein Import."}), 409
+            query_rows = conn.execute(
+                """
+                SELECT id
+                FROM search_queries
+                WHERE enabled
+                ORDER BY position
+                """
+            ).fetchall()
+            if len(query_rows) != EXPECTED_QUERY_COUNT:
+                return jsonify(
+                    {
+                        "error": (
+                            f"Start verweigert: erwartet werden {EXPECTED_QUERY_COUNT}, "
+                            f"gefunden wurden {len(query_rows)} aktive Suchen."
+                        )
+                    }
+                ), 409
+            run = conn.execute(
+                """
+                INSERT INTO deal_runs (source, planned_tasks)
+                VALUES ('ebay_active', %s)
+                RETURNING id
+                """,
+                (len(query_rows),),
+            ).fetchone()
+            for query_row in query_rows:
+                conn.execute(
+                    """
+                    INSERT INTO deal_run_tasks (run_id, query_id, source)
+                    VALUES (%s, %s, 'ebay_active')
+                    """,
+                    (run["id"], query_row["id"]),
+                )
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run["id"],
+                "planned_queries": len(query_rows),
+                "planned_calls": len(query_rows),
+            }
+        ), 201
+
+    @app.post("/api/deals/runs/<int:run_id>/cancel")
+    @json_endpoint
+    def cancel_deal_run(run_id: int) -> Any:
+        with connection() as conn:
+            row = conn.execute(
+                """
+                UPDATE deal_runs
+                SET status = 'cancel_requested', updated_at = now()
+                WHERE id = %s AND status IN ('queued', 'running')
+                RETURNING id
+                """,
+                (run_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Lauf kann nicht gestoppt werden."}), 409
+        return jsonify({"ok": True})
+
+    @app.post("/api/deals/<int:listing_id>/review")
+    @json_endpoint
+    def update_deal_review(listing_id: int) -> Any:
+        body = request.get_json(silent=True) or {}
+        review_status = str(body.get("review_status") or "")
+        note = str(body.get("note") or "")[:4000]
+        tags = body.get("tags") or []
+        if review_status not in DEAL_REVIEW_STATUSES:
+            return jsonify({"error": "Ungültiger Prüfstatus."}), 400
+        if not isinstance(tags, list) or any(tag not in DEAL_REVIEW_TAGS for tag in tags):
+            return jsonify({"error": "Ungültige Kennzeichnung."}), 400
+        tags = list(dict.fromkeys(str(tag) for tag in tags))
+        with connection() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM deal_listings WHERE id = %s",
+                (listing_id,),
+            ).fetchone()
+            if not exists:
+                return jsonify({"error": "Listing nicht gefunden."}), 404
+            row = conn.execute(
+                """
+                INSERT INTO deal_listing_reviews (
+                    listing_id, review_status, tags, note, updated_at
+                )
+                VALUES (%s, %s, %s, %s, now())
+                ON CONFLICT (listing_id) DO UPDATE SET
+                    review_status = EXCLUDED.review_status,
+                    tags = EXCLUDED.tags,
+                    note = EXCLUDED.note,
+                    updated_at = now()
+                RETURNING updated_at
+                """,
+                (listing_id, review_status, tags, note),
+            ).fetchone()
+        return jsonify({"ok": True, "updated_at": row["updated_at"].isoformat()})
 
     @app.get("/image-review")
     def image_review() -> Any:
@@ -505,6 +735,26 @@ def market_stats(conn: Any) -> dict[str, int]:
             ) AS usable
         FROM market_listings l
         LEFT JOIN market_listing_reviews r ON r.listing_id = l.id
+        """
+    ).fetchone()
+    return {key: int(row[key]) for key in row}
+
+
+def deal_stats(conn: Any) -> dict[str, int]:
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE l.image_url <> '') AS with_image,
+            COUNT(*) FILTER (WHERE l.seller_account_type = 'individual') AS private_sellers,
+            COUNT(*) FILTER (
+                WHERE COALESCE(r.review_status, 'unreviewed') = 'candidate'
+            ) AS candidates,
+            COUNT(*) FILTER (
+                WHERE COALESCE(r.review_status, 'unreviewed') = 'checked'
+            ) AS checked
+        FROM deal_listings l
+        LEFT JOIN deal_listing_reviews r ON r.listing_id = l.id
         """
     ).fetchone()
     return {key: int(row[key]) for key in row}

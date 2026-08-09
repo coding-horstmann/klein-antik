@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Deals · klein antik{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>Deals</h1>
+    <p>{{ total }} gefilterte aktuelle Angebote</p>
+  </div>
+  <button
+    class="button primary"
+    id="start-deal-run"
+    type="button"
+    title="110 eBay-DE-Suchen über die offizielle Browse-API starten"
+    {% if not credentials_configured or not worker or not worker.online or has_active_run %}disabled{% endif %}
+  >
+    <i data-lucide="play" aria-hidden="true"></i>
+    eBay DE abrufen
+  </button>
+</div>
+
+<section class="run-readiness" aria-label="Deal-Importer Status">
+  <div>
+    <span>Importer</span>
+    <strong class="{{ 'ok' if worker and worker.online else 'bad' }}">
+      {{ 'Online' if worker and worker.online else 'Offline' }}
+    </strong>
+  </div>
+  <div>
+    <span>eBay API</span>
+    <strong class="{{ 'ok' if credentials_configured else 'bad' }}">
+      {{ 'Bereit' if credentials_configured else 'Zugang fehlt' }}
+    </strong>
+  </div>
+  <div><strong>{{ stats.total }}</strong><span>Angebote</span></div>
+  <div><strong>{{ stats.with_image }}</strong><span>Mit Bild</span></div>
+  <div><strong>{{ stats.private_sellers }}</strong><span>Privatverkäufer</span></div>
+  <div class="positive"><strong>{{ stats.candidates }}</strong><span>Kandidaten</span></div>
+</section>
+
+{% if not credentials_configured %}
+  <section class="empty-state compact">
+    <i data-lucide="key-round" aria-hidden="true"></i>
+    <h2>eBay-Zugang im Importer hinterlegen</h2>
+  </section>
+{% endif %}
+
+<nav class="category-tabs" aria-label="Kategorien">
+  <a class="{{ 'active' if not filters.category else '' }}" href="{{ url_for('deals') }}">Alle</a>
+  {% for category in categories %}
+    <a
+      class="{{ 'active' if filters.category == category.id else '' }}"
+      href="{{ url_for('deals', category=category.id) }}"
+    >{{ category.label }}</a>
+  {% endfor %}
+</nav>
+
+<form class="filter-bar deal-filter-bar" method="get">
+  {% if filters.category %}<input type="hidden" name="category" value="{{ filters.category }}">{% endif %}
+  <label class="search-field">
+    <i data-lucide="search" aria-hidden="true"></i>
+    <input type="search" name="q" value="{{ filters.q }}" placeholder="Titel oder eBay-ID">
+  </label>
+  <select name="status" aria-label="Prüfstatus">
+    <option value="">Alle Prüfstatus</option>
+    {% for value, label in deal_review_statuses.items() %}
+      <option value="{{ value }}" {{ 'selected' if filters.status == value else '' }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button class="button secondary" type="submit">
+    <i data-lucide="filter" aria-hidden="true"></i>
+    Filtern
+  </button>
+</form>
+
+{% if listings %}
+  <section class="listing-grid">
+    {% for listing in listings %}
+      <article class="listing-card deal-review-form" data-deal-id="{{ listing.id }}">
+        <div class="listing-image">
+          {% if listing.image_url %}
+            <img src="{{ listing.image_url }}" alt="" loading="lazy">
+          {% else %}
+            <div class="image-missing"><i data-lucide="image-off" aria-hidden="true"></i></div>
+          {% endif %}
+          <span class="price-badge">
+            {{ format_money(listing.price_value, listing.currency) if listing.price_value is not none else 'Preis fehlt' }}
+          </span>
+        </div>
+        <div class="listing-body">
+          <div class="listing-title-row">
+            <h2>{{ listing.title }}</h2>
+            <a class="icon-link" href="{{ listing.url }}" target="_blank" rel="noreferrer" title="eBay-Angebot öffnen">
+              <i data-lucide="external-link" aria-hidden="true"></i>
+              <span class="sr-only">eBay-Angebot öffnen</span>
+            </a>
+          </div>
+          <p class="listing-meta">
+            <span class="source-badge">{{ deal_source_labels.get(listing.source, listing.source) }}</span>
+            {% if listing.condition_text %}<span>{{ listing.condition_text }}</span>{% endif %}
+            {% if listing.listing_end %}<span>Endet {{ listing.listing_end }}</span>{% endif %}
+          </p>
+          <div class="query-chips">
+            {% for query in listing.query_texts[:3] %}<span>{{ query }}</span>{% endfor %}
+            {% if listing.query_texts|length > 3 %}<span>+{{ listing.query_texts|length - 3 }}</span>{% endif %}
+          </div>
+          <div class="review-controls single">
+            <label>
+              <span>Prüfstatus</span>
+              <select name="review_status">
+                {% for value, label in deal_review_statuses.items() %}
+                  <option value="{{ value }}" {{ 'selected' if listing.review_status == value else '' }}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+          <div class="tag-list" aria-label="Kennzeichnungen">
+            {% for value, label in deal_review_tags.items() %}
+              <label>
+                <input type="checkbox" name="tags" value="{{ value }}" {{ 'checked' if value in listing.tags else '' }}>
+                <span>{{ label }}</span>
+              </label>
+            {% endfor %}
+          </div>
+          <label class="note-field">
+            <span>Notiz</span>
+            <textarea name="note" rows="3" maxlength="4000" placeholder="Eigene Einschätzung">{{ listing.note }}</textarea>
+          </label>
+          <div class="save-state" aria-live="polite">Gespeichert</div>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+
+  {% if pages > 1 %}
+    <nav class="pagination" aria-label="Seitennavigation">
+      {% if page > 1 %}
+        <a href="{{ url_for('deals', page=page-1, **filters) }}">
+          <i data-lucide="chevron-left" aria-hidden="true"></i>
+          Zurück
+        </a>
+      {% endif %}
+      <span>Seite {{ page }} von {{ pages }}</span>
+      {% if page < pages %}
+        <a href="{{ url_for('deals', page=page+1, **filters) }}">
+          Weiter
+          <i data-lucide="chevron-right" aria-hidden="true"></i>
+        </a>
+      {% endif %}
+    </nav>
+  {% endif %}
+{% elif credentials_configured %}
+  <section class="empty-state">
+    <i data-lucide="scan-search" aria-hidden="true"></i>
+    <h2>Noch keine aktuellen Angebote</h2>
+  </section>
+{% endif %}
+
+{% if runs %}
+  <section class="runs-list deal-runs" data-deal-auto-refresh="{{ 'true' if has_active_run else 'false' }}">
+    {% for run in runs %}
+      <article class="run-row">
+        <div class="run-number">
+          <span>eBay-Lauf</span>
+          <strong>#{{ run.id }}</strong>
+        </div>
+        <div class="run-progress-block">
+          <div class="run-topline">
+            <strong class="status status-{{ run.status }}">{{ run_labels.get(run.status, run.status) }}</strong>
+            <span>{{ run.completed_tasks }} / {{ run.planned_tasks }} Suchabfragen</span>
+          </div>
+          <div class="progress-track">
+            <span style="width: {{ (run.completed_tasks * 100 / run.planned_tasks) if run.planned_tasks else 0 }}%"></span>
+          </div>
+          <div class="run-metrics">
+            <span>{{ run.api_calls_used }} API-Calls</span>
+            <span>{{ run.imported_results }} Ergebnisse</span>
+            <span>{{ run.unique_listings }} eindeutig</span>
+            <span>{{ run.failed_tasks }} fehlgeschlagen</span>
+          </div>
+          {% if run.error %}<p class="run-error">{{ run.error }}</p>{% endif %}
+        </div>
+        <div class="run-time">
+          <span>{{ format_time(run.requested_at) }}</span>
+          {% if run.status in ('queued', 'running', 'cancel_requested') %}
+            <button class="icon-button cancel-deal-run" type="button" data-deal-run-id="{{ run.id }}" title="Lauf stoppen">
+              <i data-lucide="square" aria-hidden="true"></i>
+              <span class="sr-only">Lauf stoppen</span>
+            </button>
+          {% endif %}
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+{% endif %}
+{% endblock %}

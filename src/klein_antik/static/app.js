@@ -33,6 +33,14 @@ function reviewPayload(element) {
   };
 }
 
+function dealReviewPayload(element) {
+  return {
+    review_status: element.querySelector('[name="review_status"]').value,
+    tags: Array.from(element.querySelectorAll('[name="tags"]:checked')).map((input) => input.value),
+    note: element.querySelector('[name="note"]').value,
+  };
+}
+
 function queryPayload(element) {
   return {
     review_status: element.querySelector('[name="review_status"]').value,
@@ -117,6 +125,46 @@ function bindRunControls() {
   }
 }
 
+function bindDealRunControls() {
+  const start = document.getElementById("start-deal-run");
+  if (start) {
+    start.addEventListener("click", async () => {
+      const confirmed = window.confirm(
+        "eBay DE für alle 110 Suchbegriffe starten? Der Pilot verwendet höchstens 110 offizielle Browse-API-Suchabfragen und nur Privatverkäufer."
+      );
+      if (!confirmed) return;
+      start.disabled = true;
+      try {
+        const result = await postJSON("/api/deals/runs/start");
+        showToast(`eBay-Lauf #${result.run_id} wurde eingereiht.`);
+        window.setTimeout(() => window.location.reload(), 900);
+      } catch (error) {
+        showToast(error.message, true);
+        start.disabled = false;
+      }
+    });
+  }
+
+  document.querySelectorAll(".cancel-deal-run").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!window.confirm(`eBay-Lauf #${button.dataset.dealRunId} stoppen?`)) return;
+      button.disabled = true;
+      try {
+        await postJSON(`/api/deals/runs/${button.dataset.dealRunId}/cancel`);
+        window.location.reload();
+      } catch (error) {
+        showToast(error.message, true);
+        button.disabled = false;
+      }
+    });
+  });
+
+  const list = document.querySelector(".deal-runs[data-deal-auto-refresh=true]");
+  if (list) {
+    window.setTimeout(() => window.location.reload(), 12000);
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   if (window.lucide) window.lucide.createIcons();
   bindAutosave(
@@ -125,9 +173,15 @@ document.addEventListener("DOMContentLoaded", () => {
     reviewPayload
   );
   bindAutosave(
+    ".deal-review-form",
+    (element) => `/api/deals/${element.dataset.dealId}/review`,
+    dealReviewPayload
+  );
+  bindAutosave(
     ".query-review",
     (element) => `/api/queries/${encodeURIComponent(element.dataset.queryId)}/review`,
     queryPayload
   );
   bindRunControls();
+  bindDealRunControls();
 });
