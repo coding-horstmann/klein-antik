@@ -18,6 +18,18 @@ USER_AGENT = (
     "(+https://klein-antik-dashboard-production.up.railway.app/)"
 )
 REQUEST_TIMEOUT_SECONDS = 35
+SOURCE_PAGE_SIZES = {
+    "auctionet": 48,
+    "quittenbaum": 15,
+    "lempertz": 10,
+    "bruun_rasmussen": 30,
+}
+SOURCE_MAX_PAGES = {
+    "auctionet": 5,
+    "quittenbaum": 5,
+    "lempertz": 2,
+    "bruun_rasmussen": 1,
+}
 
 SOURCE_LABELS = {
     "auctionet": "Auctionet",
@@ -64,6 +76,8 @@ def collect(
     query: str,
     *,
     limit: int = 30,
+    max_pages: int = 1,
+    page_interval: float = 0.0,
     session: requests.Session | None = None,
 ) -> list[dict[str, Any]]:
     collectors: dict[str, Callable[..., list[dict[str, Any]]]] = {
@@ -77,12 +91,33 @@ def collect(
     own_session = session is None
     active_session = session or build_session()
     try:
-        results = collectors[source](
-            active_session,
-            search_query_for(query, source=source),
-            limit=limit,
-        )
-        return [result for result in results if relevant_to_query(query, result)]
+        page_size = SOURCE_PAGE_SIZES[source]
+        page_cap = min(max(1, max_pages), SOURCE_MAX_PAGES[source])
+        raw_results: list[dict[str, Any]] = []
+        search_query = search_query_for(query, source=source)
+        for page in range(1, page_cap + 1):
+            page_results = collectors[source](
+                active_session,
+                search_query,
+                limit=page_size,
+                page=page,
+            )
+            raw_results.extend(page_results)
+            if len(page_results) < page_size or len(raw_results) >= limit:
+                break
+            if page < page_cap and page_interval > 0:
+                time.sleep(page_interval)
+
+        results: list[dict[str, Any]] = []
+        source_item_ids: set[str] = set()
+        for result in raw_results:
+            source_item_id = result["source_item_id"]
+            if source_item_id in source_item_ids:
+                continue
+            source_item_ids.add(source_item_id)
+            if relevant_to_query(query, result):
+                results.append(result)
+        return results[:limit]
     finally:
         if own_session:
             active_session.close()
@@ -118,11 +153,17 @@ def collect_auctionet(
     query: str,
     *,
     limit: int,
+    page: int,
 ) -> list[dict[str, Any]]:
     response = _get(
         session,
         "https://auctionet.com/en/search",
-        params={"is": "ended", "order": "sold_recent", "q": query},
+        params={
+            "is": "ended",
+            "order": "sold_recent",
+            "page": page,
+            "q": query,
+        },
     )
     soup = BeautifulSoup(response.text, "html.parser")
     items: list[dict[str, Any]] = []
@@ -170,10 +211,14 @@ def collect_quittenbaum(
     query: str,
     *,
     limit: int,
+    page: int,
 ) -> list[dict[str, Any]]:
+    path = "https://www.quittenbaum.de/en/search/"
+    if page > 1:
+        path = f"https://www.quittenbaum.de/en/search/page/{page}/"
     response = _get(
         session,
-        "https://www.quittenbaum.de/en/search/",
+        path,
         params={"q": query},
     )
     soup = BeautifulSoup(response.text, "html.parser")
@@ -244,6 +289,7 @@ def collect_bruun_rasmussen(
     query: str,
     *,
     limit: int,
+    page: int,
 ) -> list[dict[str, Any]]:
     response = _get(
         session,
@@ -322,11 +368,15 @@ def collect_lempertz(
     query: str,
     *,
     limit: int,
+    page: int,
 ) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {"id": "113", "tx_kesearch_pi1[sword]": query}
+    if page > 1:
+        params["tx_kesearch_pi1[page]"] = page
     response = _get(
         session,
         "https://www.lempertz.com/en/search.html",
-        params={"id": "113", "tx_kesearch_pi1[sword]": query},
+        params=params,
     )
     soup = BeautifulSoup(response.text, "html.parser")
     results: list[dict[str, Any]] = []

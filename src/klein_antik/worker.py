@@ -329,7 +329,12 @@ def finish_run(run_id: int) -> None:
         )
 
 
-def process_run(run: dict[str, Any], interval: float, result_limit: int) -> None:
+def process_run(
+    run: dict[str, Any],
+    interval: float,
+    result_limit: int,
+    pages_per_source: int,
+) -> None:
     run_id = int(run["id"])
     LOG.info(
         "Starte Marktpreislauf %s mit %s Quellenaufgaben",
@@ -354,6 +359,8 @@ def process_run(run: dict[str, Any], interval: float, result_limit: int) -> None
                     task["source"],
                     task["query_text"],
                     limit=result_limit,
+                    max_pages=pages_per_source,
+                    page_interval=interval,
                     session=session,
                 )
                 save_results(run_id, task, results)
@@ -388,11 +395,12 @@ def main() -> None:
 
     poll_seconds = max(2, env_int("WORKER_POLL_SECONDS", 5))
     interval = max(1.0, env_float("MARKET_REQUEST_INTERVAL_SECONDS", 2.0))
-    result_limit = max(5, min(50, env_int("MARKET_RESULTS_PER_SOURCE", 30)))
+    result_limit = max(5, min(96, env_int("MARKET_RESULTS_PER_SOURCE", 96)))
+    pages_per_source = max(1, min(5, env_int("MARKET_PAGES_PER_SOURCE", 2)))
     while not STOP:
         run = claim_run()
         if run:
-            process_run(run, interval, result_limit)
+            process_run(run, interval, result_limit, pages_per_source)
             continue
         heartbeat("idle", message="Bereit fuer Marktpreislauf")
         time.sleep(poll_seconds)

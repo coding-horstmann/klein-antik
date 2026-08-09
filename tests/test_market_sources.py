@@ -185,6 +185,50 @@ class MarketSourceTests(unittest.TestCase):
         self.assertEqual(results[1]["price_status"], "unsold")
         self.assertIsNone(results[1]["price_value"])
 
+    def test_auctionet_can_collect_a_second_result_page(self) -> None:
+        first_payload = {
+            "items": [
+                {
+                    "id": item_id,
+                    "shortTitle": f"Meissen plate {item_id}",
+                    "url": f"/en/{item_id}-meissen-plate",
+                    "amountValue": "100 SEK",
+                    "hasMetReserve": True,
+                }
+                for item_id in range(1, 49)
+            ]
+        }
+        second_payload = {
+            "items": [
+                {
+                    "id": item_id,
+                    "shortTitle": f"Meissen plate {item_id}",
+                    "url": f"/en/{item_id}-meissen-plate",
+                    "amountValue": "100 SEK",
+                    "hasMetReserve": True,
+                }
+                for item_id in range(49, 53)
+            ]
+        }
+        pages = [
+            '<div data-react-props="'
+            + html.escape(json.dumps(payload), quote=True)
+            + '"></div>'
+            for payload in (first_payload, second_payload)
+        ]
+        session = FakeSession(pages)
+
+        results = collect(
+            "auctionet",
+            "Meissen",
+            session=session,
+            limit=96,
+            max_pages=2,
+        )
+
+        self.assertEqual(len(results), 52)
+        self.assertEqual([call[1]["page"] for call in session.calls], [1, 2])
+
     def test_quittenbaum_preserves_hammer_price(self) -> None:
         page = """
         <ul>

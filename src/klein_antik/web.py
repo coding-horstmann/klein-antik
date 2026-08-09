@@ -11,6 +11,7 @@ from typing import Any, Callable
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 from .catalog import EXPECTED_QUERY_COUNT, category_options, load_queries
+from .config import env_int
 from .db import connection, init_schema
 from .ebay_active import importer_ready
 from .market_sources import SOURCE_LABELS, sources_for_category
@@ -381,6 +382,7 @@ def create_app() -> Flask:
             failed_tasks=[dict(row) for row in failed_tasks],
             expected_queries=EXPECTED_QUERY_COUNT,
             expected_tasks=expected_market_tasks(),
+            market_pages=max(1, min(5, env_int("MARKET_PAGES_PER_SOURCE", 2))),
         )
 
     @app.get("/deals")
