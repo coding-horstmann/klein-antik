@@ -267,6 +267,135 @@ a {
   max-width: 720px;
 }
 
+.match-filter-bar {
+  grid-template-columns: minmax(180px, 240px) minmax(180px, 240px) auto;
+  max-width: 700px;
+}
+
+.match-list {
+  display: grid;
+  gap: 14px;
+}
+
+.match-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1fr) minmax(185px, 0.58fr);
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.match-item {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+
+.match-item-image {
+  position: relative;
+  min-height: 148px;
+  background: #121614;
+}
+
+.match-item-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.match-item-image .price-badge {
+  right: 7px;
+  bottom: 7px;
+}
+
+.match-item-body {
+  position: relative;
+  min-width: 0;
+  padding: 15px 48px 14px 14px;
+}
+
+.match-item-body h2 {
+  display: -webkit-box;
+  margin: 5px 0 7px;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.32;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.match-item-body p,
+.match-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.match-label {
+  display: block;
+  font-weight: 700;
+}
+
+.match-item-body .icon-link {
+  position: absolute;
+  top: 13px;
+  right: 12px;
+}
+
+.match-score {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  justify-items: center;
+  gap: 3px;
+  padding: 14px 8px;
+  border-right: 1px solid var(--border);
+  text-align: center;
+}
+
+.match-score strong {
+  color: var(--green);
+  font-size: 21px;
+}
+
+.match-score span,
+.match-score small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.match-score em {
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.25;
+}
+
+.match-review {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px;
+}
+
+.match-review > label > span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.match-review select,
+.match-review textarea {
+  width: 100%;
+}
+
 .search-field {
   position: relative;
 }
@@ -866,6 +995,15 @@ textarea:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .match-row {
+    grid-template-columns: minmax(0, 1fr) 120px minmax(0, 1fr);
+  }
+
+  .match-review {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--border);
+  }
+
   .filter-bar {
     grid-template-columns: repeat(3, minmax(160px, 1fr));
   }
@@ -947,6 +1085,20 @@ textarea:hover {
 
   .listing-grid {
     grid-template-columns: 1fr;
+  }
+
+  .match-row {
+    grid-template-columns: 1fr;
+  }
+
+  .match-item,
+  .match-score {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .match-review {
+    grid-column: auto;
   }
 
   .run-row {

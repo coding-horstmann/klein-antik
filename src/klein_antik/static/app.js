@@ -48,6 +48,13 @@ function queryPayload(element) {
   };
 }
 
+function matchReviewPayload(element) {
+  return {
+    review_status: element.querySelector('[name="review_status"]').value,
+    note: element.querySelector('[name="note"]').value,
+  };
+}
+
 function bindAutosave(selector, urlFor, payloadFor) {
   document.querySelectorAll(selector).forEach((element) => {
     let timer;
@@ -165,6 +172,46 @@ function bindDealRunControls() {
   }
 }
 
+function bindImageMatchControls() {
+  const start = document.getElementById("start-image-match-run");
+  if (start) {
+    start.addEventListener("click", async () => {
+      const confirmed = window.confirm(
+        "Bildabgleich fuer alle aktuellen Deals starten? Die Bilder werden nur ueber die gespeicherten Bild-URLs geladen und gegen passende Auktionsreferenzen verglichen."
+      );
+      if (!confirmed) return;
+      start.disabled = true;
+      try {
+        const result = await postJSON("/api/image-matches/runs/start");
+        showToast(`Bildabgleich #${result.run_id} wurde eingereiht.`);
+        window.setTimeout(() => window.location.reload(), 900);
+      } catch (error) {
+        showToast(error.message, true);
+        start.disabled = false;
+      }
+    });
+  }
+
+  document.querySelectorAll(".cancel-image-match-run").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!window.confirm(`Bildabgleich #${button.dataset.imageMatchRunId} stoppen?`)) return;
+      button.disabled = true;
+      try {
+        await postJSON(`/api/image-matches/runs/${button.dataset.imageMatchRunId}/cancel`);
+        window.location.reload();
+      } catch (error) {
+        showToast(error.message, true);
+        button.disabled = false;
+      }
+    });
+  });
+
+  const list = document.querySelector(".image-match-runs[data-image-match-auto-refresh=true]");
+  if (list) {
+    window.setTimeout(() => window.location.reload(), 12000);
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   if (window.lucide) window.lucide.createIcons();
   bindAutosave(
@@ -182,6 +229,12 @@ document.addEventListener("DOMContentLoaded", () => {
     (element) => `/api/queries/${encodeURIComponent(element.dataset.queryId)}/review`,
     queryPayload
   );
+  bindAutosave(
+    ".match-review-form",
+    (element) => `/api/image-matches/${element.dataset.matchId}/review`,
+    matchReviewPayload
+  );
   bindRunControls();
   bindDealRunControls();
+  bindImageMatchControls();
 });

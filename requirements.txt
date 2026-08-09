@@ -3,3 +3,4 @@ gunicorn>=23,<24
 psycopg[binary]>=3.2,<4
 requests>=2.32,<3
 beautifulsoup4>=4.12,<5
+Pillow>=10.4,<12

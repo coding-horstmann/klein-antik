@@ -10,6 +10,11 @@ def main() -> None:
 
         worker_main()
         return
+    if mode == "matcher":
+        from .match_worker import main as matcher_main
+
+        matcher_main()
+        return
     if mode != "dashboard":
         raise RuntimeError(f"Unbekannter APP_MODE: {mode}")
 
@@ -29,4 +34,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

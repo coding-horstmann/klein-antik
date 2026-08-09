@@ -57,6 +57,12 @@ DEAL_REVIEW_TAGS = {
     "unclear": "Unklare Zuschreibung",
     "duplicate": "Dublette",
 }
+MATCH_REVIEW_STATUSES = {
+    "unreviewed": "Ungeprueft",
+    "candidate": "Kandidat",
+    "checked": "Geprueft",
+    "skip": "Verwerfen",
+}
 DEAL_SOURCE_LABELS = {
     "ebay_active": "eBay DE · Privat",
 }
@@ -553,12 +559,216 @@ def create_app() -> Flask:
 
     @app.get("/image-review")
     def image_review() -> Any:
+        category = request.args.get("category", "").strip()
+        review_status = request.args.get("status", "").strip()
+        minimum_score = request.args.get("min_score", "0.60").strip()
+        page = max(1, min(10000, request.args.get("page", 1, type=int)))
+        page_size = 24
+        try:
+            score_value = max(0.0, min(1.0, float(minimum_score)))
+        except ValueError:
+            score_value = 0.60
+        where = ["match.score >= %s"]
+        params: list[Any] = [score_value]
+        if category:
+            where.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM deal_listing_query_matches deal_query
+                    JOIN search_queries deal_search ON deal_search.id = deal_query.query_id
+                    JOIN market_listing_query_matches market_query
+                        ON market_query.listing_id = match.market_listing_id
+                    JOIN search_queries market_search ON market_search.id = market_query.query_id
+                    WHERE deal_query.listing_id = match.deal_listing_id
+                      AND deal_search.category = %s
+                      AND market_search.category = deal_search.category
+                )
+                """
+            )
+            params.append(category)
+        if review_status in MATCH_REVIEW_STATUSES:
+            where.append("match.review_status = %s")
+            params.append(review_status)
+        where_sql = " AND ".join(where)
+        with connection() as conn:
+            total_row = conn.execute(
+                f"SELECT COUNT(*) AS count FROM image_matches match WHERE {where_sql}",
+                params,
+            ).fetchone()
+            rows = conn.execute(
+                f"""
+                SELECT
+                    match.*,
+                    deal.title AS deal_title,
+                    deal.url AS deal_url,
+                    deal.image_url AS deal_image_url,
+                    deal.price_value AS deal_price_value,
+                    deal.currency AS deal_currency,
+                    deal.condition_text AS deal_condition_text,
+                    market.title AS market_title,
+                    market.url AS market_url,
+                    market.image_url AS market_image_url,
+                    market.price_value AS market_price_value,
+                    market.currency AS market_currency,
+                    market.price_status AS market_price_status,
+                    market.price_basis AS market_price_basis,
+                    market.source AS market_source,
+                    array_agg(DISTINCT deal_search.category_label ORDER BY deal_search.category_label)
+                        FILTER (WHERE deal_search.category = market_search.category) AS category_labels
+                FROM image_matches match
+                JOIN deal_listings deal ON deal.id = match.deal_listing_id
+                JOIN market_listings market ON market.id = match.market_listing_id
+                LEFT JOIN deal_listing_query_matches deal_query
+                    ON deal_query.listing_id = deal.id
+                LEFT JOIN search_queries deal_search ON deal_search.id = deal_query.query_id
+                LEFT JOIN market_listing_query_matches market_query
+                    ON market_query.listing_id = market.id
+                LEFT JOIN search_queries market_search ON market_search.id = market_query.query_id
+                WHERE {where_sql}
+                GROUP BY match.id, deal.id, market.id
+                ORDER BY match.score DESC, match.updated_at DESC, match.id DESC
+                LIMIT %s OFFSET %s
+                """,
+                [*params, page_size, (page - 1) * page_size],
+            ).fetchall()
+            run_rows = conn.execute(
+                "SELECT * FROM image_match_runs ORDER BY id DESC LIMIT 8"
+            ).fetchall()
+            worker = conn.execute(
+                """
+                SELECT *, last_seen_at > now() - interval '90 seconds' AS online
+                FROM worker_status
+                WHERE name = 'image-matcher'
+                """
+            ).fetchone()
+            stats = image_match_stats(conn)
+        total = int(total_row["count"]) if total_row else 0
         return render_template(
-            "empty.html",
+            "image_review.html",
             active_tab="image_review",
-            title="Bild prüfen",
-            empty_text="Noch keine Bildvergleiche vorhanden.",
+            matches=[dict(row) for row in rows],
+            stats=stats,
+            total=total,
+            page=page,
+            pages=max(1, (total + page_size - 1) // page_size),
+            categories=category_options(),
+            match_review_statuses=MATCH_REVIEW_STATUSES,
+            price_statuses=PRICE_STATUSES,
+            price_basis_labels=PRICE_BASIS_LABELS,
+            source_labels=SOURCE_LABELS,
+            run_labels=RUN_LABELS,
+            worker=dict(worker) if worker else None,
+            runs=[dict(row) for row in run_rows],
+            has_active_run=any(
+                run["status"] in {"queued", "running", "cancel_requested"}
+                for run in run_rows
+            ),
+            filters={
+                "category": category,
+                "status": review_status,
+                "min_score": f"{score_value:.2f}",
+            },
         )
+
+    @app.post("/api/image-matches/runs/start")
+    @json_endpoint
+    def start_image_match_run() -> Any:
+        with connection() as conn:
+            worker = conn.execute(
+                """
+                SELECT last_seen_at > now() - interval '90 seconds' AS online
+                FROM worker_status
+                WHERE name = 'image-matcher'
+                """
+            ).fetchone()
+            if not worker or not worker["online"]:
+                return jsonify({"error": "Der Bildabgleich-Worker ist nicht erreichbar."}), 409
+            active = conn.execute(
+                """
+                SELECT id FROM image_match_runs
+                WHERE status IN ('queued', 'running', 'cancel_requested')
+                LIMIT 1
+                """
+            ).fetchone()
+            if active:
+                return jsonify({"error": "Es laeuft bereits ein Bildabgleich."}), 409
+            counts = conn.execute(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE image_url <> '') AS deal_count,
+                    (SELECT COUNT(*) FROM market_listings WHERE image_url <> '' AND price_value IS NOT NULL)
+                        AS market_count
+                FROM deal_listings
+                """
+            ).fetchone()
+            if not counts or not int(counts["deal_count"]) or not int(counts["market_count"]):
+                return jsonify({"error": "Deals oder Marktpreise mit Bild und Preis fehlen noch."}), 409
+            run = conn.execute(
+                """
+                INSERT INTO image_match_runs (planned_tasks)
+                VALUES (%s)
+                RETURNING id
+                """,
+                (int(counts["deal_count"]),),
+            ).fetchone()
+            conn.execute(
+                """
+                INSERT INTO image_match_tasks (run_id, deal_listing_id)
+                SELECT %s, id
+                FROM deal_listings
+                WHERE image_url <> ''
+                ORDER BY id
+                """,
+                (run["id"],),
+            )
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run["id"],
+                "planned_deals": int(counts["deal_count"]),
+                "reference_pool": int(counts["market_count"]),
+            }
+        ), 201
+
+    @app.post("/api/image-matches/runs/<int:run_id>/cancel")
+    @json_endpoint
+    def cancel_image_match_run(run_id: int) -> Any:
+        with connection() as conn:
+            row = conn.execute(
+                """
+                UPDATE image_match_runs
+                SET status = 'cancel_requested', updated_at = now()
+                WHERE id = %s AND status IN ('queued', 'running')
+                RETURNING id
+                """,
+                (run_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Bildabgleich kann nicht gestoppt werden."}), 409
+        return jsonify({"ok": True})
+
+    @app.post("/api/image-matches/<int:match_id>/review")
+    @json_endpoint
+    def update_image_match_review(match_id: int) -> Any:
+        body = request.get_json(silent=True) or {}
+        review_status = str(body.get("review_status") or "")
+        note = str(body.get("note") or "")[:4000]
+        if review_status not in MATCH_REVIEW_STATUSES:
+            return jsonify({"error": "Ungueltiger Pruefstatus."}), 400
+        with connection() as conn:
+            row = conn.execute(
+                """
+                UPDATE image_matches
+                SET review_status = %s, note = %s, updated_at = now()
+                WHERE id = %s
+                RETURNING updated_at
+                """,
+                (review_status, note, match_id),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Bildvergleich nicht gefunden."}), 404
+        return jsonify({"ok": True, "updated_at": row["updated_at"].isoformat()})
 
     @app.post("/api/listings/<int:listing_id>/review")
     @json_endpoint
@@ -755,6 +965,22 @@ def deal_stats(conn: Any) -> dict[str, int]:
             ) AS checked
         FROM deal_listings l
         LEFT JOIN deal_listing_reviews r ON r.listing_id = l.id
+        """
+    ).fetchone()
+    return {key: int(row[key]) for key in row}
+
+
+def image_match_stats(conn: Any) -> dict[str, int]:
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE score >= 0.70) AS strong,
+            COUNT(DISTINCT deal_listing_id) AS deals,
+            COUNT(*) FILTER (WHERE review_status = 'candidate') AS candidates,
+            COUNT(*) FILTER (WHERE review_status = 'checked') AS checked,
+            COUNT(*) FILTER (WHERE review_status = 'skip') AS skipped
+        FROM image_matches
         """
     ).fetchone()
     return {key: int(row[key]) for key in row}

@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Bild pruefen &middot; klein antik{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>Bild pruefen</h1>
+    <p>{{ total }} priorisierte Bildvergleiche</p>
+  </div>
+  <button
+    class="button primary"
+    id="start-image-match-run"
+    type="button"
+    title="Alle aktuellen Dealbilder gegen passende Marktpreis-Referenzen abgleichen"
+    {% if not worker or not worker.online or has_active_run %}disabled{% endif %}
+  >
+    <i data-lucide="scan-search" aria-hidden="true"></i>
+    Bildabgleich starten
+  </button>
+</div>
+
+<section class="run-readiness" aria-label="Bildabgleich Status">
+  <div>
+    <span>Matcher</span>
+    <strong class="{{ 'ok' if worker and worker.online else 'bad' }}">
+      {{ 'Online' if worker and worker.online else 'Offline' }}
+    </strong>
+  </div>
+  <div><strong>{{ stats.deals }}</strong><span>Deals mit Treffer</span></div>
+  <div class="positive"><strong>{{ stats.strong }}</strong><span>Bildscore ab 70 %</span></div>
+  <div><strong>{{ stats.total }}</strong><span>Vergleiche</span></div>
+  <div class="positive"><strong>{{ stats.candidates }}</strong><span>Kandidaten</span></div>
+  <div><strong>{{ stats.checked }}</strong><span>Geprueft</span></div>
+</section>
+
+<nav class="category-tabs" aria-label="Kategorien">
+  <a class="{{ 'active' if not filters.category else '' }}" href="{{ url_for('image_review') }}">Alle</a>
+  {% for category in categories %}
+    <a
+      class="{{ 'active' if filters.category == category.id else '' }}"
+      href="{{ url_for('image_review', category=category.id, min_score=filters.min_score) }}"
+    >{{ category.label }}</a>
+  {% endfor %}
+</nav>
+
+<form class="filter-bar match-filter-bar" method="get">
+  {% if filters.category %}<input type="hidden" name="category" value="{{ filters.category }}">{% endif %}
+  <select name="min_score" aria-label="Mindestscore">
+    <option value="0.70" {{ 'selected' if filters.min_score == '0.70' }}>Bildscore ab 70 %</option>
+    <option value="0.60" {{ 'selected' if filters.min_score == '0.60' }}>Bildscore ab 60 %</option>
+    <option value="0.53" {{ 'selected' if filters.min_score == '0.53' }}>Alle Kandidaten</option>
+  </select>
+  <select name="status" aria-label="Pruefstatus">
+    <option value="">Alle Pruefstatus</option>
+    {% for value, label in match_review_statuses.items() %}
+      <option value="{{ value }}" {{ 'selected' if filters.status == value else '' }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button class="button secondary" type="submit">
+    <i data-lucide="filter" aria-hidden="true"></i>
+    Filtern
+  </button>
+</form>
+
+{% if matches %}
+  <section class="match-list">
+    {% for match in matches %}
+      <article class="match-row match-review-form" data-match-id="{{ match.id }}">
+        <div class="match-item">
+          <div class="match-item-image">
+            <img src="{{ match.deal_image_url }}" alt="" loading="lazy">
+            <span class="price-badge">{{ format_money(match.deal_price_value, match.deal_currency) }}</span>
+          </div>
+          <div class="match-item-body">
+            <span class="match-label">Deal &middot; eBay DE</span>
+            <h2>{{ match.deal_title }}</h2>
+            {% if match.deal_condition_text %}<p>{{ match.deal_condition_text }}</p>{% endif %}
+            <a class="icon-link" href="{{ match.deal_url }}" target="_blank" rel="noreferrer" title="eBay-Angebot oeffnen">
+              <i data-lucide="external-link" aria-hidden="true"></i><span class="sr-only">eBay-Angebot oeffnen</span>
+            </a>
+          </div>
+        </div>
+        <div class="match-score" title="Bild- und Titelmerkmale; vor dem Kauf immer selbst pruefen">
+          <strong>{{ '%.0f'|format(match.score * 100) }} %</strong>
+          <span>Abgleich</span>
+          <small>Bild {{ '%.0f'|format(match.visual_score * 100) }} &middot; Titel {{ '%.0f'|format(match.title_score * 100) }}</small>
+          {% for category in match.category_labels or [] %}<em>{{ category }}</em>{% endfor %}
+        </div>
+        <div class="match-item">
+          <div class="match-item-image">
+            <img src="{{ match.market_image_url }}" alt="" loading="lazy">
+            <span class="price-badge">{{ format_money(match.market_price_value, match.market_currency) }}</span>
+          </div>
+          <div class="match-item-body">
+            <span class="match-label">Referenz &middot; {{ source_labels.get(match.market_source, match.market_source) }}</span>
+            <h2>{{ match.market_title }}</h2>
+            <p>{{ price_statuses.get(match.market_price_status, match.market_price_status) }} &middot; {{ price_basis_labels.get(match.market_price_basis, match.market_price_basis) }}</p>
+            <a class="icon-link" href="{{ match.market_url }}" target="_blank" rel="noreferrer" title="Auktionsreferenz oeffnen">
+              <i data-lucide="external-link" aria-hidden="true"></i><span class="sr-only">Auktionsreferenz oeffnen</span>
+            </a>
+          </div>
+        </div>
+        <div class="match-review">
+          <label>
+            <span>Pruefstatus</span>
+            <select name="review_status">
+              {% for value, label in match_review_statuses.items() %}
+                <option value="{{ value }}" {{ 'selected' if match.review_status == value else '' }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="note-field">
+            <span>Notiz</span>
+            <textarea name="note" rows="3" maxlength="4000" placeholder="Eigene Pruefung">{{ match.note }}</textarea>
+          </label>
+          <div class="save-state" aria-live="polite">Gespeichert</div>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+
+  {% if pages > 1 %}
+    <nav class="pagination" aria-label="Seitennavigation">
+      {% if page > 1 %}
+        <a href="{{ url_for('image_review', page=page-1, **filters) }}"><i data-lucide="chevron-left" aria-hidden="true"></i>Zurueck</a>
+      {% endif %}
+      <span>Seite {{ page }} von {{ pages }}</span>
+      {% if page < pages %}
+        <a href="{{ url_for('image_review', page=page+1, **filters) }}">Weiter<i data-lucide="chevron-right" aria-hidden="true"></i></a>
+      {% endif %}
+    </nav>
+  {% endif %}
+{% else %}
+  <section class="empty-state compact">
+    <i data-lucide="images" aria-hidden="true"></i>
+    <h2>Noch keine Bildvergleiche in diesem Filter.</h2>
+  </section>
+{% endif %}
+
+{% if runs %}
+  <section class="runs-section">
+    <h2>Letzte Bildabgleiche</h2>
+    <div class="runs-list image-match-runs" data-image-match-auto-refresh="{{ 'true' if has_active_run else 'false' }}">
+      {% for run in runs %}
+        <div class="run-row">
+          <div><span>Lauf</span><strong>#{{ run.id }}</strong></div>
+          <div>
+            <strong>{{ run_labels.get(run.status, run.status) }}</strong>
+            <p>{{ run.completed_tasks }}/{{ run.planned_tasks }} Deals &middot; {{ run.analysed_images }} neue Bilder &middot; {{ run.matches_written }} Treffer</p>
+            {% if run.error %}<p class="error-copy">{{ run.error }}</p>{% endif %}
+          </div>
+          <div class="run-time">
+            <span>{{ format_time(run.requested_at) }}</span>
+            {% if run.status in ('queued', 'running', 'cancel_requested') %}
+              <button class="icon-button cancel-image-match-run" type="button" data-image-match-run-id="{{ run.id }}" title="Bildabgleich stoppen">
+                <i data-lucide="square" aria-hidden="true"></i><span class="sr-only">Bildabgleich stoppen</span>
+              </button>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

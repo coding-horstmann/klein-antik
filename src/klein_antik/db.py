@@ -323,6 +323,95 @@ def init_schema() -> None:
                 CHECK (review_status IN ('unreviewed', 'candidate', 'checked', 'skip'))
             );
 
+            CREATE TABLE IF NOT EXISTS image_features (
+                listing_kind TEXT NOT NULL,
+                listing_id BIGINT NOT NULL,
+                image_url TEXT NOT NULL,
+                feature_version INTEGER NOT NULL DEFAULT 1,
+                status TEXT NOT NULL DEFAULT 'queued',
+                width INTEGER,
+                height INTEGER,
+                ahash TEXT NOT NULL DEFAULT '',
+                dhash TEXT NOT NULL DEFAULT '',
+                blockhash TEXT NOT NULL DEFAULT '',
+                color_vector REAL[] NOT NULL DEFAULT ARRAY[]::REAL[],
+                edge_vector REAL[] NOT NULL DEFAULT ARRAY[]::REAL[],
+                error TEXT NOT NULL DEFAULT '',
+                processed_at TIMESTAMPTZ,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (listing_kind, listing_id),
+                CHECK (listing_kind IN ('deal', 'market')),
+                CHECK (status IN ('queued', 'ok', 'failed'))
+            );
+
+            CREATE TABLE IF NOT EXISTS image_match_runs (
+                id BIGSERIAL PRIMARY KEY,
+                status TEXT NOT NULL DEFAULT 'queued',
+                planned_tasks INTEGER NOT NULL,
+                completed_tasks INTEGER NOT NULL DEFAULT 0,
+                successful_tasks INTEGER NOT NULL DEFAULT 0,
+                failed_tasks INTEGER NOT NULL DEFAULT 0,
+                analysed_images INTEGER NOT NULL DEFAULT 0,
+                candidate_pairs INTEGER NOT NULL DEFAULT 0,
+                matches_written INTEGER NOT NULL DEFAULT 0,
+                error TEXT NOT NULL DEFAULT '',
+                requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                started_at TIMESTAMPTZ,
+                completed_at TIMESTAMPTZ,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                CHECK (status IN (
+                    'queued', 'running', 'completed', 'completed_with_errors',
+                    'cancel_requested', 'cancelled', 'failed'
+                ))
+            );
+
+            CREATE TABLE IF NOT EXISTS image_match_tasks (
+                id BIGSERIAL PRIMARY KEY,
+                run_id BIGINT NOT NULL REFERENCES image_match_runs(id) ON DELETE CASCADE,
+                deal_listing_id BIGINT NOT NULL REFERENCES deal_listings(id) ON DELETE CASCADE,
+                status TEXT NOT NULL DEFAULT 'queued',
+                analysed_images INTEGER NOT NULL DEFAULT 0,
+                candidate_pairs INTEGER NOT NULL DEFAULT 0,
+                matches_written INTEGER NOT NULL DEFAULT 0,
+                error TEXT NOT NULL DEFAULT '',
+                started_at TIMESTAMPTZ,
+                completed_at TIMESTAMPTZ,
+                UNIQUE (run_id, deal_listing_id),
+                CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled'))
+            );
+
+            CREATE INDEX IF NOT EXISTS image_match_tasks_run_idx
+                ON image_match_tasks (run_id, status, id);
+
+            CREATE TABLE IF NOT EXISTS image_matches (
+                id BIGSERIAL PRIMARY KEY,
+                deal_listing_id BIGINT NOT NULL REFERENCES deal_listings(id) ON DELETE CASCADE,
+                market_listing_id BIGINT NOT NULL REFERENCES market_listings(id) ON DELETE CASCADE,
+                last_run_id BIGINT NOT NULL REFERENCES image_match_runs(id) ON DELETE CASCADE,
+                rank INTEGER NOT NULL,
+                score REAL NOT NULL,
+                visual_score REAL NOT NULL,
+                title_score REAL NOT NULL,
+                ahash_score REAL NOT NULL,
+                dhash_score REAL NOT NULL,
+                blockhash_score REAL NOT NULL,
+                color_score REAL NOT NULL,
+                edge_score REAL NOT NULL,
+                review_status TEXT NOT NULL DEFAULT 'unreviewed',
+                note TEXT NOT NULL DEFAULT '',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                UNIQUE (deal_listing_id, market_listing_id),
+                CHECK (rank BETWEEN 1 AND 5),
+                CHECK (score >= 0 AND score <= 1),
+                CHECK (review_status IN ('unreviewed', 'candidate', 'checked', 'skip'))
+            );
+
+            CREATE INDEX IF NOT EXISTS image_matches_review_idx
+                ON image_matches (review_status, score DESC, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS image_matches_deal_idx
+                ON image_matches (deal_listing_id, rank);
+
             ALTER TABLE reference_runs
                 ADD COLUMN IF NOT EXISTS api_calls_used INTEGER NOT NULL DEFAULT 0;
 
@@ -336,6 +425,10 @@ def init_schema() -> None:
             ALTER TABLE worker_status
                 ADD COLUMN IF NOT EXISTS current_deal_run_id BIGINT
                 REFERENCES deal_runs(id) ON DELETE SET NULL;
+
+            ALTER TABLE worker_status
+                ADD COLUMN IF NOT EXISTS current_match_run_id BIGINT
+                REFERENCES image_match_runs(id) ON DELETE SET NULL;
             """
         )
         seed_queries(conn)
