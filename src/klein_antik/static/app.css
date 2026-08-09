@@ -262,6 +262,10 @@ a {
   margin-bottom: 20px;
 }
 
+.catalog-filter-bar {
+  grid-template-columns: minmax(220px, 1fr) minmax(190px, 250px) repeat(3, minmax(150px, 190px)) auto;
+}
+
 .deal-filter-bar {
   grid-template-columns: minmax(220px, 1fr) minmax(160px, 220px) auto;
   max-width: 720px;

@@ -170,11 +170,11 @@ def create_app() -> Flask:
     @app.get("/references")
     def references() -> Any:
         category = request.args.get("category", "").strip()
-        content_status = request.args.get("status", "").strip()
-        use_status = request.args.get("use", "").strip()
+        keyword = request.args.get("keyword", "").strip()
         price_status = request.args.get("price_status", "").strip()
         source = request.args.get("source", "").strip()
         search = request.args.get("q", "").strip()
+        sort = request.args.get("sort", "newest").strip()
         page = max(1, min(10000, request.args.get("page", 1, type=int)))
         page_size = 36
         where = ["TRUE"]
@@ -192,16 +192,22 @@ def create_app() -> Flask:
                 """
             )
             params.append(category)
-        if content_status in CONTENT_STATUSES:
-            where.append("COALESCE(r.content_status, 'unreviewed') = %s")
-            params.append(content_status)
-        if use_status in USE_STATUSES:
-            where.append("COALESCE(r.use_status, 'price_image') = %s")
-            params.append(use_status)
+        if keyword:
+            where.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM market_listing_query_matches keyword_match
+                    WHERE keyword_match.listing_id = l.id
+                      AND keyword_match.query_id = %s
+                )
+                """
+            )
+            params.append(keyword)
         if price_status in PRICE_STATUSES:
             where.append("l.price_status = %s")
             params.append(price_status)
-        if source in SOURCE_LABELS:
+        if source:
             where.append("l.source = %s")
             params.append(source)
         if search:
@@ -209,12 +215,18 @@ def create_app() -> Flask:
             params.extend([f"%{search}%", f"%{search}%"])
 
         where_sql = " AND ".join(where)
+        sort_orders = {
+            "newest": "l.last_seen_at DESC, l.id DESC",
+            "price_asc": "l.price_value ASC NULLS LAST, l.last_seen_at DESC, l.id DESC",
+            "price_desc": "l.price_value DESC NULLS LAST, l.last_seen_at DESC, l.id DESC",
+        }
+        if sort not in sort_orders:
+            sort = "newest"
         with connection() as conn:
             total_row = conn.execute(
                 f"""
                 SELECT COUNT(*) AS count
                 FROM market_listings l
-                LEFT JOIN market_listing_reviews r ON r.listing_id = l.id
                 WHERE {where_sql}
                 """,
                 params,
@@ -223,43 +235,76 @@ def create_app() -> Flask:
                 f"""
                 SELECT
                     l.*,
-                    COALESCE(r.content_status, 'unreviewed') AS content_status,
-                    COALESCE(r.use_status, 'price_image') AS use_status,
-                    COALESCE(r.tags, ARRAY[]::TEXT[]) AS tags,
-                    COALESCE(r.note, '') AS note,
-                    r.updated_at AS review_updated_at,
                     array_agg(DISTINCT q.query_text ORDER BY q.query_text) AS query_texts,
                     array_agg(DISTINCT q.category ORDER BY q.category) AS category_ids
                 FROM market_listings l
-                LEFT JOIN market_listing_reviews r ON r.listing_id = l.id
                 JOIN market_listing_query_matches qm ON qm.listing_id = l.id
                 JOIN search_queries q ON q.id = qm.query_id
                 WHERE {where_sql}
-                GROUP BY l.id, r.listing_id, r.content_status, r.use_status,
-                    r.tags, r.note, r.updated_at
-                ORDER BY l.last_seen_at DESC, l.id DESC
+                GROUP BY l.id
+                ORDER BY {sort_orders[sort]}
                 LIMIT %s OFFSET %s
                 """,
                 [*params, page_size, (page - 1) * page_size],
             ).fetchall()
+            keyword_rows = conn.execute(
+                """
+                SELECT
+                    q.id,
+                    q.category,
+                    q.category_label,
+                    q.query_text,
+                    COUNT(DISTINCT qm.listing_id) AS listing_count
+                FROM search_queries q
+                LEFT JOIN market_listing_query_matches qm ON qm.query_id = q.id
+                WHERE q.enabled = TRUE
+                GROUP BY q.id
+                ORDER BY q.position
+                """
+            ).fetchall()
+            source_rows = conn.execute(
+                "SELECT DISTINCT source FROM market_listings ORDER BY source"
+            ).fetchall()
             stats = market_stats(conn)
 
         total = int(total_row["count"]) if total_row else 0
+        keywords_by_category: dict[str, list[dict[str, Any]]] = {
+            item["id"]: [] for item in category_options()
+        }
+        for row in keyword_rows:
+            keyword_row = dict(row)
+            keywords_by_category.setdefault(keyword_row["category"], []).append(keyword_row)
+        keyword_groups = [
+            {
+                "id": item["id"],
+                "label": item["label"],
+                "keywords": keywords_by_category.get(item["id"], []),
+            }
+            for item in category_options()
+        ]
         return render_template(
             "references.html",
             active_tab="references",
             listings=[dict(row) for row in rows],
             stats=stats,
+            keyword_groups=keyword_groups,
+            source_options=[
+                {
+                    "id": row["source"],
+                    "label": SOURCE_LABELS.get(row["source"], row["source"]),
+                }
+                for row in source_rows
+            ],
             total=total,
             page=page,
             pages=max(1, (total + page_size - 1) // page_size),
             filters={
                 "category": category,
-                "status": content_status,
-                "use": use_status,
+                "keyword": keyword,
                 "price_status": price_status,
                 "source": source,
                 "q": search,
+                "sort": sort,
             },
         )
 
@@ -339,6 +384,10 @@ def create_app() -> Flask:
         )
 
     @app.get("/deals")
+    def deals_redirect() -> Any:
+        return redirect(url_for("references"))
+
+    @app.get("/archive/deals")
     def deals() -> Any:
         category = request.args.get("category", "").strip()
         review_status = request.args.get("status", "").strip()
@@ -592,6 +641,10 @@ def create_app() -> Flask:
         return jsonify({"ok": True, "updated_at": row["updated_at"].isoformat()})
 
     @app.get("/image-review")
+    def image_review_redirect() -> Any:
+        return redirect(url_for("references"))
+
+    @app.get("/archive/image-review")
     def image_review() -> Any:
         category = request.args.get("category", "").strip()
         review_status = request.args.get("status", "").strip()
@@ -987,13 +1040,10 @@ def market_stats(conn: Any) -> dict[str, int]:
             COUNT(*) AS total,
             COUNT(*) FILTER (WHERE l.price_status = 'sold') AS sold,
             COUNT(*) FILTER (WHERE l.price_status = 'ask') AS ask,
-            COUNT(*) FILTER (WHERE l.price_status = 'unsold') AS unsold,
-            COUNT(*) FILTER (WHERE l.price_status = 'unknown') AS unknown,
-            COUNT(*) FILTER (
-                WHERE COALESCE(r.content_status, 'unreviewed') = 'usable'
-            ) AS usable
+            COUNT(*) FILTER (WHERE l.price_status = 'current_bid') AS current_bid,
+            COUNT(*) FILTER (WHERE l.price_status = 'estimate') AS estimate,
+            COUNT(*) FILTER (WHERE l.price_status = 'unknown') AS unknown
         FROM market_listings l
-        LEFT JOIN market_listing_reviews r ON r.listing_id = l.id
         """
     ).fetchone()
     return {key: int(row[key]) for key in row}

@@ -12,17 +12,11 @@
   <header class="app-header">
     <a class="brand" href="{{ url_for('references') }}">klein antik</a>
     <nav class="main-nav" aria-label="Hauptnavigation">
-      <a class="{{ 'active' if active_tab == 'deals' else '' }}" href="{{ url_for('deals') }}">
-        Deals
-      </a>
       <a class="{{ 'active' if active_tab in ('references', 'queries') else '' }}" href="{{ url_for('references') }}">
-        Marktpreise
+        Marktarchiv
       </a>
       <a class="{{ 'active' if active_tab == 'runs' else '' }}" href="{{ url_for('runs') }}">
-        Läufe
-      </a>
-      <a class="{{ 'active' if active_tab == 'image_review' else '' }}" href="{{ url_for('image_review') }}">
-        Bild prüfen
+        Datenlaeufe
       </a>
     </nav>
   </header>

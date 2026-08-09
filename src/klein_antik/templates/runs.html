@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Läufe · klein antik{% endblock %}
+{% block title %}Datenlaeufe &middot; klein antik{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
-    <h1>Läufe</h1>
-    <p>Öffentliche Auktionsarchive und Händlerergebnisse</p>
+    <h1>Datenlaeufe</h1>
+    <p>Oeffentliche Auktionsarchive und Haendlerergebnisse</p>
   </div>
   <button
     class="button primary"
@@ -13,11 +13,11 @@
     {% if not worker or not worker.online %}disabled{% endif %}
   >
     <i data-lucide="play" aria-hidden="true"></i>
-    110 Begriffe durchsuchen
+    Marktdaten aktualisieren
   </button>
 </div>
 
-<section class="run-readiness">
+<section class="run-readiness" aria-label="Marktdaten-Importer Status">
   <div>
     <span>Importer</span>
     <strong class="{{ 'ok' if worker and worker.online else 'bad' }}">
@@ -25,24 +25,24 @@
     </strong>
   </div>
   <div>
-    <span>API-Kosten</span>
-    <strong class="ok">Keine</strong>
-  </div>
-  <div>
     <span>Suchbegriffe</span>
     <strong>{{ expected_queries }}</strong>
   </div>
   <div>
-    <span>Quellenabfragen</span>
+    <span>Quellenaufgaben</span>
     <strong>{{ expected_tasks }}</strong>
   </div>
   <div>
-    <span>Quellen</span>
-    <strong>4 Auktionshäuser</strong>
+    <span>Aktive Quellen</span>
+    <strong>4</strong>
   </div>
   <div>
     <span>Preisarten</span>
-    <strong>Verkauf · Angebot</strong>
+    <strong>Getrennt</strong>
+  </div>
+  <div>
+    <span>eBay-Deals</span>
+    <strong>Archiviert</strong>
   </div>
 </section>
 
@@ -85,16 +85,16 @@
 {% else %}
   <section class="empty-state compact">
     <i data-lucide="history" aria-hidden="true"></i>
-    <h2>Noch keine Läufe</h2>
+    <h2>Noch keine Datenlaeufe</h2>
   </section>
 {% endif %}
 
 {% if failed_tasks %}
   <section class="failed-queries">
-    <h2>Fehlgeschlagene Suchen</h2>
+    <h2>Fehlgeschlagene Quellenabfragen</h2>
     {% for failure in failed_tasks %}
       <div>
-        <strong>#{{ failure.run_id }} · {{ source_labels.get(failure.source, failure.source) }} · {{ failure.query_text }}</strong>
+        <strong>#{{ failure.run_id }} &middot; {{ source_labels.get(failure.source, failure.source) }} &middot; {{ failure.query_text }}</strong>
         <span>{{ failure.error }}</span>
       </div>
     {% endfor %}

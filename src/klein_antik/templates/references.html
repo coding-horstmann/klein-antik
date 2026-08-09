@@ -1,14 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Marktpreise · klein antik{% endblock %}
+{% block title %}Marktarchiv &middot; klein antik{% endblock %}
 {% block content %}
 <div class="page-heading">
   <div>
-    <h1>Marktpreise</h1>
-    <p>{{ total }} gefilterte Auktionsobjekte</p>
-  </div>
-  <div class="view-switch" aria-label="Referenzansicht">
-    <a class="active" href="{{ url_for('references') }}">Listings</a>
-    <a href="{{ url_for('queries') }}">Suchbegriffe</a>
+    <h1>Marktarchiv</h1>
+    <p>{{ total }} Marktlistings aus Auktionsquellen</p>
   </div>
 </div>
 
@@ -16,9 +12,9 @@
   <div><strong>{{ stats.total }}</strong><span>Gesamt</span></div>
   <div class="positive"><strong>{{ stats.sold }}</strong><span>Verkauft</span></div>
   <div><strong>{{ stats.ask }}</strong><span>Angebote</span></div>
-  <div class="warning"><strong>{{ stats.unsold }}</strong><span>Unverkauft</span></div>
+  <div><strong>{{ stats.current_bid }}</strong><span>Aktuelle Gebote</span></div>
+  <div class="warning"><strong>{{ stats.estimate }}</strong><span>Schaetzungen</span></div>
   <div class="warning"><strong>{{ stats.unknown }}</strong><span>Preis unbekannt</span></div>
-  <div class="positive"><strong>{{ stats.usable }}</strong><span>Geprüft brauchbar</span></div>
 </section>
 
 <nav class="category-tabs" aria-label="Kategorien">
@@ -31,12 +27,22 @@
   {% endfor %}
 </nav>
 
-<form class="filter-bar" method="get">
+<form class="filter-bar catalog-filter-bar" method="get">
   {% if filters.category %}<input type="hidden" name="category" value="{{ filters.category }}">{% endif %}
   <label class="search-field">
     <i data-lucide="search" aria-hidden="true"></i>
     <input type="search" name="q" value="{{ filters.q }}" placeholder="Titel oder Quellen-ID">
   </label>
+  <select name="keyword" aria-label="Suchbegriff">
+    <option value="">Alle Suchbegriffe</option>
+    {% for group in keyword_groups if not filters.category or group.id == filters.category %}
+      <optgroup label="{{ group.label }}">
+        {% for keyword in group.keywords %}
+          <option value="{{ keyword.id }}" {{ 'selected' if filters.keyword == keyword.id else '' }}>{{ keyword.query_text }} ({{ keyword.listing_count }})</option>
+        {% endfor %}
+      </optgroup>
+    {% endfor %}
+  </select>
   <select name="price_status" aria-label="Preisart">
     <option value="">Alle Preisarten</option>
     {% for value, label in price_statuses.items() %}
@@ -45,21 +51,14 @@
   </select>
   <select name="source" aria-label="Quelle">
     <option value="">Alle Quellen</option>
-    {% for value, label in source_labels.items() %}
-      <option value="{{ value }}" {{ 'selected' if filters.source == value else '' }}>{{ label }}</option>
+    {% for source in source_options %}
+      <option value="{{ source.id }}" {{ 'selected' if filters.source == source.id else '' }}>{{ source.label }}</option>
     {% endfor %}
   </select>
-  <select name="status" aria-label="Prüfstatus">
-    <option value="">Alle Prüfstatus</option>
-    {% for value, label in content_statuses.items() %}
-      <option value="{{ value }}" {{ 'selected' if filters.status == value else '' }}>{{ label }}</option>
-    {% endfor %}
-  </select>
-  <select name="use" aria-label="Verwendung">
-    <option value="">Alle Verwendungen</option>
-    {% for value, label in use_statuses.items() %}
-      <option value="{{ value }}" {{ 'selected' if filters.use == value else '' }}>{{ label }}</option>
-    {% endfor %}
+  <select name="sort" aria-label="Sortierung">
+    <option value="newest" {{ 'selected' if filters.sort == 'newest' }}>Zuletzt erfasst</option>
+    <option value="price_asc" {{ 'selected' if filters.sort == 'price_asc' }}>Preis aufsteigend</option>
+    <option value="price_desc" {{ 'selected' if filters.sort == 'price_desc' }}>Preis absteigend</option>
   </select>
   <button class="button secondary" type="submit">
     <i data-lucide="filter" aria-hidden="true"></i>
@@ -70,7 +69,7 @@
 {% if listings %}
   <section class="listing-grid">
     {% for listing in listings %}
-      <article class="listing-card review-form" data-listing-id="{{ listing.id }}">
+      <article class="listing-card">
         <div class="listing-image">
           {% if listing.image_url %}
             <img src="{{ listing.image_url }}" alt="" loading="lazy">
@@ -91,9 +90,9 @@
           <div class="listing-title-row">
             <h2>{{ listing.title }}</h2>
             {% if listing.url %}
-              <a class="icon-link" href="{{ listing.url }}" target="_blank" rel="noreferrer" title="Quelle öffnen">
+              <a class="icon-link" href="{{ listing.url }}" target="_blank" rel="noreferrer" title="Quelle oeffnen">
                 <i data-lucide="external-link" aria-hidden="true"></i>
-                <span class="sr-only">Quelle öffnen</span>
+                <span class="sr-only">Quelle oeffnen</span>
               </a>
             {% endif %}
           </div>
@@ -102,46 +101,11 @@
             <span class="price-status-badge price-status-{{ listing.price_status }}">{{ price_statuses.get(listing.price_status, listing.price_status) }}</span>
             <span>{{ price_basis_labels.get(listing.price_basis, listing.price_basis) }}</span>
             {% if listing.sale_date %}<span>{{ listing.sale_date }}</span>{% endif %}
-            <span>ID {{ listing.source_item_id }}</span>
           </p>
-          {% if listing.attribution == 'uncertain' %}
-            <p class="attribution-warning">Zuschreibung laut Quelle unsicher</p>
-          {% endif %}
-          <div class="query-chips">
+          <div class="query-chips" aria-label="Gefunden ueber Suchbegriffe">
             {% for query in listing.query_texts[:3] %}<span>{{ query }}</span>{% endfor %}
             {% if listing.query_texts|length > 3 %}<span>+{{ listing.query_texts|length - 3 }}</span>{% endif %}
           </div>
-          <div class="review-controls">
-            <label>
-              <span>Prüfstatus</span>
-              <select name="content_status">
-                {% for value, label in content_statuses.items() %}
-                  <option value="{{ value }}" {{ 'selected' if listing.content_status == value else '' }}>{{ label }}</option>
-                {% endfor %}
-              </select>
-            </label>
-            <label>
-              <span>Verwendung</span>
-              <select name="use_status">
-                {% for value, label in use_statuses.items() %}
-                  <option value="{{ value }}" {{ 'selected' if listing.use_status == value else '' }}>{{ label }}</option>
-                {% endfor %}
-              </select>
-            </label>
-          </div>
-          <div class="tag-list" aria-label="Kennzeichnungen">
-            {% for value, label in review_tags.items() %}
-              <label>
-                <input type="checkbox" name="tags" value="{{ value }}" {{ 'checked' if value in listing.tags else '' }}>
-                <span>{{ label }}</span>
-              </label>
-            {% endfor %}
-          </div>
-          <label class="note-field">
-            <span>Notiz</span>
-            <textarea name="note" rows="3" maxlength="4000" placeholder="Eigene Einschätzung">{{ listing.note }}</textarea>
-          </label>
-          <div class="save-state" aria-live="polite">Gespeichert</div>
         </div>
       </article>
     {% endfor %}
@@ -152,7 +116,7 @@
       {% if page > 1 %}
         <a href="{{ url_for('references', page=page-1, **filters) }}">
           <i data-lucide="chevron-left" aria-hidden="true"></i>
-          Zurück
+          Zurueck
         </a>
       {% endif %}
       <span>Seite {{ page }} von {{ pages }}</span>
@@ -167,7 +131,7 @@
 {% else %}
   <section class="empty-state">
     <i data-lucide="archive" aria-hidden="true"></i>
-    <h2>Noch keine Marktpreise</h2>
+    <h2>Keine Marktlistings in diesem Filter.</h2>
   </section>
 {% endif %}
 {% endblock %}
