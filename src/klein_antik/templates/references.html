@@ -55,6 +55,19 @@
       <option value="{{ source.id }}" {{ 'selected' if filters.source == source.id else '' }}>{{ source.label }}</option>
     {% endfor %}
   </select>
+  <div class="price-range" role="group" aria-label="Preisbereich">
+    <label class="sr-only" for="currency">Waehrung</label>
+    <select id="currency" name="currency" aria-label="Waehrung">
+      <option value="">Waehrung</option>
+      {% for item in currencies %}
+        <option value="{{ item }}" {{ 'selected' if filters.currency == item else '' }}>{{ item }}</option>
+      {% endfor %}
+    </select>
+    <label class="sr-only" for="price-min">Preis ab</label>
+    <input id="price-min" name="price_min" type="number" min="0" step="0.01" inputmode="decimal" value="{{ filters.price_min }}" placeholder="Preis ab">
+    <label class="sr-only" for="price-max">Preis bis</label>
+    <input id="price-max" name="price_max" type="number" min="0" step="0.01" inputmode="decimal" value="{{ filters.price_max }}" placeholder="Preis bis">
+  </div>
   <select name="sort" aria-label="Sortierung">
     <option value="newest" {{ 'selected' if filters.sort == 'newest' }}>Zuletzt erfasst</option>
     <option value="price_asc" {{ 'selected' if filters.sort == 'price_asc' }}>Preis aufsteigend</option>
@@ -70,7 +83,11 @@
   <section class="listing-grid">
     {% for listing in listings %}
       <article class="listing-card">
-        <div class="listing-image">
+        {% if listing.url %}
+          <a class="listing-image listing-image-link" href="{{ listing.url }}" target="_blank" rel="noreferrer" aria-label="Quelle oeffnen: {{ listing.title }}">
+        {% else %}
+          <div class="listing-image">
+        {% endif %}
           {% if listing.image_url %}
             <img src="{{ listing.image_url }}" alt="" loading="lazy">
           {% else %}
@@ -85,7 +102,7 @@
               Preis fehlt
             {% endif %}
           </span>
-        </div>
+        {% if listing.url %}</a>{% else %}</div>{% endif %}
         <div class="listing-body">
           <div class="listing-title-row">
             <h2>{{ listing.title }}</h2>

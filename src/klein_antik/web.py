@@ -15,6 +15,7 @@ from .config import env_int
 from .db import connection, init_schema
 from .ebay_active import importer_ready
 from .market_sources import SOURCE_LABELS, sources_for_category
+from .price_filters import format_price_filter, parse_price_filter
 
 
 CONTENT_STATUSES = {
@@ -173,11 +174,14 @@ def create_app() -> Flask:
         category = request.args.get("category", "").strip()
         keyword = request.args.get("keyword", "").strip()
         price_status = request.args.get("price_status", "").strip()
+        currency = request.args.get("currency", "").strip().upper()
+        price_min = parse_price_filter(request.args.get("price_min", ""))
+        price_max = parse_price_filter(request.args.get("price_max", ""))
         source = request.args.get("source", "").strip()
         search = request.args.get("q", "").strip()
         sort = request.args.get("sort", "newest").strip()
         page = max(1, min(10000, request.args.get("page", 1, type=int)))
-        page_size = 36
+        page_size = 60
         where = ["TRUE"]
         params: list[Any] = []
 
@@ -208,6 +212,15 @@ def create_app() -> Flask:
         if price_status in PRICE_STATUSES:
             where.append("l.price_status = %s")
             params.append(price_status)
+        if currency:
+            where.append("l.currency = %s")
+            params.append(currency)
+        if price_min is not None:
+            where.append("l.price_value >= %s")
+            params.append(price_min)
+        if price_max is not None:
+            where.append("l.price_value <= %s")
+            params.append(price_max)
         if source:
             where.append("l.source = %s")
             params.append(source)
@@ -266,7 +279,15 @@ def create_app() -> Flask:
             source_rows = conn.execute(
                 "SELECT DISTINCT source FROM market_listings ORDER BY source"
             ).fetchall()
-            stats = market_stats(conn)
+            currency_rows = conn.execute(
+                """
+                SELECT DISTINCT currency
+                FROM market_listings
+                WHERE currency <> ''
+                ORDER BY currency
+                """
+            ).fetchall()
+            stats = market_stats(conn, where_sql, params)
 
         total = int(total_row["count"]) if total_row else 0
         keywords_by_category: dict[str, list[dict[str, Any]]] = {
@@ -296,6 +317,7 @@ def create_app() -> Flask:
                 }
                 for row in source_rows
             ],
+            currencies=[row["currency"] for row in currency_rows],
             total=total,
             page=page,
             pages=max(1, (total + page_size - 1) // page_size),
@@ -303,6 +325,9 @@ def create_app() -> Flask:
                 "category": category,
                 "keyword": keyword,
                 "price_status": price_status,
+                "currency": currency,
+                "price_min": format_price_filter(price_min),
+                "price_max": format_price_filter(price_max),
                 "source": source,
                 "q": search,
                 "sort": sort,
@@ -1035,9 +1060,14 @@ def json_endpoint(function: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-def market_stats(conn: Any) -> dict[str, int]:
+def market_stats(
+    conn: Any,
+    where_sql: str = "TRUE",
+    params: list[Any] | None = None,
+) -> dict[str, int]:
+    active_params = params or []
     row = conn.execute(
-        """
+        f"""
         SELECT
             COUNT(*) AS total,
             COUNT(*) FILTER (WHERE l.price_status = 'sold') AS sold,
@@ -1046,7 +1076,9 @@ def market_stats(conn: Any) -> dict[str, int]:
             COUNT(*) FILTER (WHERE l.price_status = 'estimate') AS estimate,
             COUNT(*) FILTER (WHERE l.price_status = 'unknown') AS unknown
         FROM market_listings l
-        """
+        WHERE {where_sql}
+        """,
+        active_params,
     ).fetchone()
     return {key: int(row[key]) for key in row}
 

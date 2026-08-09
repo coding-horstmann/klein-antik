@@ -13,6 +13,7 @@ from klein_antik.market_sources import (
     search_query_for,
     sources_for_category,
 )
+from klein_antik.price_filters import format_price_filter, parse_price_filter
 
 
 class FakeResponse:
@@ -34,6 +35,12 @@ class FakeSession:
 
 
 class MarketSourceTests(unittest.TestCase):
+    def test_price_filter_parses_german_decimal_input(self) -> None:
+        self.assertEqual(parse_price_filter("125,50"), Decimal("125.50"))
+        self.assertEqual(format_price_filter(Decimal("125.50")), "125.50")
+        self.assertIsNone(parse_price_filter("-1"))
+        self.assertIsNone(parse_price_filter("keine zahl"))
+
     def test_source_matrix_has_238_tasks(self) -> None:
         task_count = sum(
             len(sources_for_category(query["category"])) for query in load_queries()
