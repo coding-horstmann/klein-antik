@@ -40,14 +40,14 @@ SOURCE_LABELS = {
 
 CATEGORY_SOURCES = {
     "meissen_porcelain": ("lempertz", "auctionet"),
-    "designer_jewelry": ("auctionet", "bruun_rasmussen"),
+    "designer_jewelry": ("auctionet",),
     "art_nouveau_metalware": ("auctionet", "quittenbaum"),
-    "design_glass": ("auctionet", "bruun_rasmussen"),
-    "ceramics": ("auctionet", "bruun_rasmussen"),
-    "silver_jewelry": ("auctionet", "bruun_rasmussen"),
-    "small_lamps": ("auctionet", "bruun_rasmussen", "quittenbaum"),
-    "metal_objects": ("auctionet", "bruun_rasmussen", "quittenbaum"),
-    "design_objects": ("auctionet", "bruun_rasmussen"),
+    "design_glass": ("auctionet",),
+    "ceramics": ("auctionet",),
+    "silver_jewelry": ("auctionet",),
+    "small_lamps": ("auctionet", "quittenbaum"),
+    "metal_objects": ("auctionet", "quittenbaum"),
+    "design_objects": ("auctionet",),
 }
 
 

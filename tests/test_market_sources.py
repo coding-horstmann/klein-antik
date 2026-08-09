@@ -41,11 +41,11 @@ class MarketSourceTests(unittest.TestCase):
         self.assertIsNone(parse_price_filter("-1"))
         self.assertIsNone(parse_price_filter("keine zahl"))
 
-    def test_source_matrix_has_238_tasks(self) -> None:
+    def test_source_matrix_has_157_tasks(self) -> None:
         task_count = sum(
             len(sources_for_category(query["category"])) for query in load_queries()
         )
-        self.assertEqual(task_count, 238)
+        self.assertEqual(task_count, 157)
 
     def test_money_formats(self) -> None:
         self.assertEqual(parse_money("EUR 1.234,50"), (Decimal("1234.50"), "EUR"))

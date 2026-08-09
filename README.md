@@ -8,7 +8,7 @@ Auktionsarchive und stellt die Ergebnisse in einem Review-Dashboard bereit.
 
 - 110 Suchbegriffe in neun Kategorien
 - Auctionet, Quittenbaum, Lempertz und Bruun Rasmussen
-- 238 kategoriegesteuerte Quellenabfragen je vollstaendigem Lauf
+- 157 kategoriegesteuerte Quellenabfragen je vollstaendigem Lauf
 - getrennte Kennzeichnung von Verkaufspreis, Angebot, aktuellem Gebot,
   Schaetzung, unverkauft und unbekannt
 - dokumentierte Preisgrundlage, etwa Hammerpreis oder Preis inklusive Aufgeld
