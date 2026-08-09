@@ -12,7 +12,7 @@ from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 from .catalog import EXPECTED_QUERY_COUNT, category_options, load_queries
 from .db import connection, init_schema
-from .ebay_active import credentials_configured
+from .ebay_active import importer_ready
 from .market_sources import SOURCE_LABELS, sources_for_category
 
 
@@ -418,7 +418,7 @@ def create_app() -> Flask:
             },
             runs=[dict(row) for row in run_rows],
             worker=dict(worker) if worker else None,
-            credentials_configured=credentials_configured(),
+            credentials_configured=importer_ready(),
             has_active_run=any(
                 run["status"] in {"queued", "running", "cancel_requested"}
                 for run in run_rows
@@ -428,7 +428,7 @@ def create_app() -> Flask:
     @app.post("/api/deals/runs/start")
     @json_endpoint
     def start_deal_run() -> Any:
-        if not credentials_configured():
+        if not importer_ready():
             return jsonify(
                 {"error": "EBAY_CLIENT_ID und EBAY_CLIENT_SECRET sind im Klein-Antik-Importer nicht gesetzt."}
             ), 409

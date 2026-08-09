@@ -22,6 +22,12 @@ def credentials_configured() -> bool:
     )
 
 
+def importer_ready() -> bool:
+    return credentials_configured() or os.environ.get(
+        "EBAY_DEAL_IMPORTER_READY", ""
+    ).strip().lower() in {"1", "true", "yes"}
+
+
 def collect(query: str, category_id: str | None, *, limit: int) -> list[dict[str, Any]]:
     if not credentials_configured():
         raise RuntimeError("EBAY_CLIENT_ID und EBAY_CLIENT_SECRET fehlen.")

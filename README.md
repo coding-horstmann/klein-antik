@@ -36,6 +36,9 @@ EBAY_REQUEST_INTERVAL_SECONDS=1.1
 EBAY_RESULTS_PER_QUERY=50
 ```
 
+Das Dashboard braucht keine Zugangsdaten. Dort setzt nur
+`EBAY_DEAL_IMPORTER_READY=true` den sichtbaren Bereitschaftsstatus.
+
 Der Deal-Pilot bewertet keine Marge und zieht keine Aufgelder, Versandkosten
 oder eBay-Gebuehren ab. Er zeigt nur Einkaufspreis und Referenzdaten fuer die
 anschliessende manuelle Pruefung bzw. das spaetere Bild-Matching.

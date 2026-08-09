@@ -4,7 +4,12 @@ import os
 import unittest
 from unittest.mock import patch
 
-from klein_antik.ebay_active import _search_params, collect, credentials_configured
+from klein_antik.ebay_active import (
+    _search_params,
+    collect,
+    credentials_configured,
+    importer_ready,
+)
 
 
 class FakeResponse:
@@ -69,6 +74,18 @@ class EbayActiveTests(unittest.TestCase):
     def test_credentials_require_both_values(self) -> None:
         with patch.dict(os.environ, {"EBAY_CLIENT_ID": "", "EBAY_CLIENT_SECRET": "secret"}, clear=False):
             self.assertFalse(credentials_configured())
+
+    def test_dashboard_can_use_non_secret_importer_flag(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "EBAY_CLIENT_ID": "",
+                "EBAY_CLIENT_SECRET": "",
+                "EBAY_DEAL_IMPORTER_READY": "true",
+            },
+            clear=False,
+        ):
+            self.assertTrue(importer_ready())
 
     def test_collect_uses_official_browse_api_and_keeps_listing_fields(self) -> None:
         session = FakeSession()
