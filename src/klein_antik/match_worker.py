@@ -26,6 +26,7 @@ STOP = False
 FEATURE_VERSION = 1
 MAX_MATCHES_PER_DEAL = 5
 MIN_MATCH_SCORE = 0.53
+FEATURE_CACHE: dict[tuple[str, int], dict[str, Any] | None] = {}
 GENERIC_TOKENS = {
     "antique", "antik", "art", "armband", "bangle", "bracelet", "brooch", "brosche",
     "chain", "clip", "collier", "deco", "design", "designobjekt", "earring", "earrings",
@@ -340,6 +341,9 @@ def _fetch_feature(
     *,
     timeout: float,
 ) -> tuple[dict[str, Any] | None, bool]:
+    cache_key = (listing_kind, listing_id)
+    if cache_key in FEATURE_CACHE:
+        return FEATURE_CACHE[cache_key], False
     with connection() as conn:
         existing = conn.execute(
             """
@@ -354,7 +358,9 @@ def _fetch_feature(
         and existing["image_url"] == image_url
         and int(existing["feature_version"]) == FEATURE_VERSION
     ):
-        return dict(existing), False
+        feature = dict(existing)
+        FEATURE_CACHE[cache_key] = feature
+        return feature, False
 
     try:
         response = session.get(image_url, timeout=timeout)
@@ -378,6 +384,7 @@ def _fetch_feature(
                 """,
                 (listing_kind, listing_id, image_url, FEATURE_VERSION, str(exc)[:1000]),
             )
+        FEATURE_CACHE[cache_key] = None
         return None, True
 
     with connection() as conn:
@@ -422,7 +429,9 @@ def _fetch_feature(
                 feature["edge_vector"],
             ),
         ).fetchone()
-    return dict(row), True
+    result = dict(row)
+    FEATURE_CACHE[cache_key] = result
+    return result, True
 
 
 def candidate_references(deal_id: int) -> list[dict[str, Any]]:
