@@ -577,7 +577,7 @@ def process_run(run: dict[str, Any], *, timeout: float, interval: float) -> None
                     analysed_images += int(fetched)
                     if feature:
                         scored.append((reference, compare_features({**deal_feature, "title": task["title"]}, {**feature, "title": reference["title"]})))
-                    if interval:
+                    if fetched and interval:
                         time.sleep(interval)
                 scored.sort(key=lambda item: item[1]["score"], reverse=True)
                 accepted = [item for item in scored if item[1]["score"] >= MIN_MATCH_SCORE][:MAX_MATCHES_PER_DEAL]
