@@ -49,6 +49,17 @@ class ImageMatcherTests(unittest.TestCase):
         self.assertGreater(same_score["score"], 0.90)
         self.assertGreater(same_score["score"], different_score["score"])
         self.assertGreater(same_score["visual_score"], different_score["visual_score"])
+        self.assertEqual(different_score["score"], 0.0)
+
+    def test_incompatible_object_types_are_not_candidates(self) -> None:
+        feature = extract_features(image_payload(background="#101820", accent="#d6612c"))
+        earrings = {**feature, "title": "Miriam Haskell Ohrclips"}
+        bracelet = {**feature, "title": "Miriam Haskell bangle bracelet"}
+
+        score = compare_features(earrings, bracelet)
+
+        self.assertGreater(score["visual_score"], 0.90)
+        self.assertEqual(score["score"], 0.0)
 
 
 if __name__ == "__main__":

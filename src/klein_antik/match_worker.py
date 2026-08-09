@@ -27,9 +27,23 @@ FEATURE_VERSION = 1
 MAX_MATCHES_PER_DEAL = 5
 MIN_MATCH_SCORE = 0.53
 GENERIC_TOKENS = {
-    "antique", "antik", "art", "deco", "design", "designobjekt", "figur", "glass",
-    "glas", "kaufen", "keramik", "lampe", "metall", "neu", "porzellan", "schmuck",
-    "silber", "signed", "signiert", "vase", "vintage",
+    "antique", "antik", "art", "armband", "bangle", "bracelet", "brooch", "brosche",
+    "chain", "clip", "collier", "deco", "design", "designobjekt", "earring", "earrings",
+    "figur", "figure", "gilt", "glass", "glas", "gold", "kaufen", "kette", "keramik",
+    "lampe", "metal", "metall", "necklace", "neu", "ohrclip", "ohrclipse", "ohrring", "pair",
+    "porzellan", "ring", "schmuck", "silver", "silber", "signed", "signiert", "tone",
+    "vase", "vintage",
+}
+OBJECT_TOKENS = {
+    "bracelet": {"armband", "bangle", "bracelet"},
+    "brooch": {"brooch", "brosche"},
+    "earrings": {"earring", "earrings", "ohrclip", "ohrclips", "ohrclipse", "ohrring", "ohrringe"},
+    "figure": {"figur", "figure", "figurine", "skulptur", "sculpture"},
+    "lamp": {"lampe", "lamp", "leuchte", "leuchten"},
+    "necklace": {"chain", "collier", "kette", "necklace"},
+    "ring": {"ring"},
+    "tray": {"tablett", "tray"},
+    "vase": {"vase"},
 }
 
 
@@ -44,6 +58,16 @@ def _normalized_tokens(value: str) -> set[str]:
         token
         for token in re.findall(r"[a-z0-9]{3,}", normalized.lower())
         if token not in GENERIC_TOKENS and not token.isdigit()
+    }
+
+
+def _object_kinds(value: str) -> set[str]:
+    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    tokens = set(re.findall(r"[a-z0-9]{3,}", normalized.lower()))
+    return {
+        kind
+        for kind, markers in OBJECT_TOKENS.items()
+        if tokens & markers
     }
 
 
@@ -150,6 +174,24 @@ def compare_features(
         if deal_tokens and reference_tokens
         else 0.0
     )
+    shared_anchor = deal_tokens & reference_tokens
+    deal_objects = _object_kinds(str(deal["title"]))
+    reference_objects = _object_kinds(str(reference["title"]))
+    object_compatible = not (
+        deal_objects and reference_objects and not (deal_objects & reference_objects)
+    )
+    visually_identical = visual_score >= 0.985
+    if not object_compatible or (not shared_anchor and not visually_identical):
+        return {
+            "score": 0.0,
+            "visual_score": round(visual_score, 6),
+            "title_score": round(title_score, 6),
+            "ahash_score": round(ahash_score, 6),
+            "dhash_score": round(dhash_score, 6),
+            "blockhash_score": round(blockhash_score, 6),
+            "color_score": round(color_score, 6),
+            "edge_score": round(edge_score, 6),
+        }
     score = 0.78 * visual_score + 0.22 * title_score
     return {
         "score": round(max(0.0, min(1.0, score)), 6),

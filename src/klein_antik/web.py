@@ -561,15 +561,30 @@ def create_app() -> Flask:
     def image_review() -> Any:
         category = request.args.get("category", "").strip()
         review_status = request.args.get("status", "").strip()
-        minimum_score = request.args.get("min_score", "0.60").strip()
+        minimum_score = request.args.get("min_score", "0.53").strip()
         page = max(1, min(10000, request.args.get("page", 1, type=int)))
         page_size = 24
         try:
             score_value = max(0.0, min(1.0, float(minimum_score)))
         except ValueError:
-            score_value = 0.60
+            score_value = 0.53
+        with connection() as conn:
+            current_run = conn.execute(
+                """
+                SELECT id
+                FROM image_match_runs
+                WHERE status NOT IN ('cancelled', 'failed')
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
         where = ["match.score >= %s"]
         params: list[Any] = [score_value]
+        if current_run:
+            where.append("match.last_run_id = %s")
+            params.append(current_run["id"])
+        else:
+            where.append("FALSE")
         if category:
             where.append(
                 """
@@ -642,7 +657,7 @@ def create_app() -> Flask:
                 WHERE name = 'image-matcher'
                 """
             ).fetchone()
-            stats = image_match_stats(conn)
+            stats = image_match_stats(conn, int(current_run["id"]) if current_run else None)
         total = int(total_row["count"]) if total_row else 0
         return render_template(
             "image_review.html",
@@ -970,9 +985,11 @@ def deal_stats(conn: Any) -> dict[str, int]:
     return {key: int(row[key]) for key in row}
 
 
-def image_match_stats(conn: Any) -> dict[str, int]:
+def image_match_stats(conn: Any, run_id: int | None) -> dict[str, int]:
+    where = "WHERE last_run_id = %s" if run_id is not None else "WHERE FALSE"
+    params: list[Any] = [run_id] if run_id is not None else []
     row = conn.execute(
-        """
+        f"""
         SELECT
             COUNT(*) AS total,
             COUNT(*) FILTER (WHERE score >= 0.70) AS strong,
@@ -981,7 +998,9 @@ def image_match_stats(conn: Any) -> dict[str, int]:
             COUNT(*) FILTER (WHERE review_status = 'checked') AS checked,
             COUNT(*) FILTER (WHERE review_status = 'skip') AS skipped
         FROM image_matches
-        """
+        {where}
+        """,
+        params,
     ).fetchone()
     return {key: int(row[key]) for key in row}
 
