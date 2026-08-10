@@ -8,6 +8,12 @@ from unittest.mock import patch
 
 from klein_antik.catalog import load_queries
 from klein_antik.market_sources import (
+    MEISSEN_ARCHIVE_RESULT_LIMIT,
+    MEISSEN_ARCHIVE_SOURCE,
+    MEISSEN_ARCHIVE_START_PAGE,
+    MEISSEN_ARCHIVE_TARGET_PAGE,
+    SOURCE_MAX_PAGES,
+    SOURCE_PAGE_SIZES,
     collect,
     collect_batch,
     _external_request_headers,
@@ -49,6 +55,17 @@ class MarketSourceTests(unittest.TestCase):
             len(sources_for_category(query["category"])) for query in load_queries()
         )
         self.assertEqual(task_count, 157)
+
+    def test_meissen_archive_backfill_has_a_bounded_deep_range(self) -> None:
+        self.assertEqual(MEISSEN_ARCHIVE_SOURCE, "auctionet")
+        self.assertEqual(MEISSEN_ARCHIVE_START_PAGE, 6)
+        self.assertEqual(MEISSEN_ARCHIVE_TARGET_PAGE, 50)
+        self.assertEqual(SOURCE_MAX_PAGES[MEISSEN_ARCHIVE_SOURCE], 50)
+        self.assertEqual(
+            MEISSEN_ARCHIVE_RESULT_LIMIT,
+            (MEISSEN_ARCHIVE_TARGET_PAGE - MEISSEN_ARCHIVE_START_PAGE + 1)
+            * SOURCE_PAGE_SIZES[MEISSEN_ARCHIVE_SOURCE],
+        )
 
     def test_money_formats(self) -> None:
         self.assertEqual(parse_money("EUR 1.234,50"), (Decimal("1234.50"), "EUR"))

@@ -17,6 +17,10 @@ from .ebay_active import importer_ready
 from .market_sources import (
     EXTERNAL_PILOT_QUERY_IDS,
     EXTERNAL_PILOT_SOURCES,
+    MEISSEN_ARCHIVE_QUERY_ID,
+    MEISSEN_ARCHIVE_SOURCE,
+    MEISSEN_ARCHIVE_START_PAGE,
+    MEISSEN_ARCHIVE_TARGET_PAGE,
     SOURCE_LABELS,
     sources_for_category,
 )
@@ -1087,6 +1091,92 @@ def create_app() -> Flask:
                 "planned_queries": len(EXTERNAL_PILOT_QUERY_IDS),
                 "planned_tasks": len(tasks),
                 "pages_per_task": 1,
+            }
+        ), 201
+
+    @app.post("/api/runs/meissen-backfill")
+    @json_endpoint
+    def start_meissen_backfill() -> Any:
+        with connection() as conn:
+            worker = conn.execute(
+                """
+                SELECT last_seen_at > now() - interval '90 seconds' AS online
+                FROM worker_status
+                WHERE name = 'market-importer'
+                """
+            ).fetchone()
+            if not worker or not worker["online"]:
+                return jsonify({"error": "Der Marktpreis-Importer ist nicht erreichbar."}), 409
+
+            active = conn.execute(
+                """
+                SELECT id
+                FROM market_runs
+                WHERE status IN ('queued', 'running', 'cancel_requested')
+                LIMIT 1
+                """
+            ).fetchone()
+            if active:
+                return jsonify({"error": f"Lauf {active['id']} ist bereits aktiv."}), 409
+
+            query = conn.execute(
+                """
+                SELECT id
+                FROM search_queries
+                WHERE id = %s AND enabled
+                """,
+                (MEISSEN_ARCHIVE_QUERY_ID,),
+            ).fetchone()
+            if not query:
+                return jsonify({"error": "Die Meissen-Suche ist nicht aktiv."}), 409
+
+            cursor = conn.execute(
+                """
+                SELECT next_page
+                FROM market_backfill_cursors
+                WHERE query_id = %s AND source = %s
+                """,
+                (MEISSEN_ARCHIVE_QUERY_ID, MEISSEN_ARCHIVE_SOURCE),
+            ).fetchone()
+            start_page = max(
+                MEISSEN_ARCHIVE_START_PAGE,
+                int(cursor["next_page"]) if cursor else MEISSEN_ARCHIVE_START_PAGE,
+            )
+            if start_page > MEISSEN_ARCHIVE_TARGET_PAGE:
+                return jsonify({"error": "Das Meißen-Archiv bis Seite 50 ist bereits eingelesen."}), 409
+
+            page_count = MEISSEN_ARCHIVE_TARGET_PAGE - start_page + 1
+            run = conn.execute(
+                """
+                INSERT INTO market_runs (kind, planned_tasks)
+                VALUES ('backfill', 1)
+                RETURNING id
+                """
+            ).fetchone()
+            conn.execute(
+                """
+                INSERT INTO market_run_tasks (
+                    run_id, query_id, source, start_page, page_count
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    run["id"],
+                    MEISSEN_ARCHIVE_QUERY_ID,
+                    MEISSEN_ARCHIVE_SOURCE,
+                    start_page,
+                    page_count,
+                ),
+            )
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run["id"],
+                "kind": "backfill",
+                "planned_queries": 1,
+                "planned_tasks": 1,
+                "start_page": start_page,
+                "end_page": MEISSEN_ARCHIVE_TARGET_PAGE,
             }
         ), 201
 

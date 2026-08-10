@@ -32,7 +32,7 @@ SOURCE_PAGE_SIZES = {
     "heritage": 24,
 }
 SOURCE_MAX_PAGES = {
-    "auctionet": 5,
+    "auctionet": 50,
     "quittenbaum": 5,
     "lempertz": 2,
     "bruun_rasmussen": 1,
@@ -67,6 +67,15 @@ EXTERNAL_PILOT_QUERY_IDS = (
     "georg-jensen-silver",
     "paavo-tynell-lamp",
     "lisa-larson-figure",
+)
+
+MEISSEN_ARCHIVE_QUERY_ID = "meissen"
+MEISSEN_ARCHIVE_SOURCE = "auctionet"
+MEISSEN_ARCHIVE_START_PAGE = 6
+MEISSEN_ARCHIVE_TARGET_PAGE = 50
+MEISSEN_ARCHIVE_RESULT_LIMIT = (
+    (MEISSEN_ARCHIVE_TARGET_PAGE - MEISSEN_ARCHIVE_START_PAGE + 1)
+    * SOURCE_PAGE_SIZES[MEISSEN_ARCHIVE_SOURCE]
 )
 
 CATEGORY_SOURCES = {

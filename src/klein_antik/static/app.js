@@ -60,6 +60,12 @@ function bindRunControls() {
     "Die vier neuen Quellen mit sieben repraesentativen Suchbegriffen testen? Preise, Links und Relevanz werden getrennt gespeichert.",
     "Quellenpilot"
   );
+  bindStart(
+    "start-meissen-backfill",
+    "/api/runs/meissen-backfill",
+    "Das Meissen-Archiv von Auctionet von Seite 6 bis 50 einlesen? Bereits verarbeitete Seiten werden uebersprungen.",
+    "Meissen-Archivlauf"
+  );
 
   document.querySelectorAll(".cancel-run").forEach((button) => {
     button.addEventListener("click", async () => {

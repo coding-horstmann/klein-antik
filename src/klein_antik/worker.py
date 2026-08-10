@@ -10,7 +10,15 @@ from psycopg.types.json import Jsonb
 
 from .config import env_float, env_int
 from .db import connection, init_schema
-from .market_sources import SOURCE_LABELS, CollectedBatch, build_session, collect_batch
+from .market_sources import (
+    MEISSEN_ARCHIVE_QUERY_ID,
+    MEISSEN_ARCHIVE_RESULT_LIMIT,
+    MEISSEN_ARCHIVE_SOURCE,
+    SOURCE_LABELS,
+    CollectedBatch,
+    build_session,
+    collect_batch,
+)
 
 
 logging.basicConfig(
@@ -382,10 +390,17 @@ def process_run(
                 ),
             )
             try:
+                task_result_limit = result_limit
+                if (
+                    task["run_kind"] == "backfill"
+                    and task["query_id"] == MEISSEN_ARCHIVE_QUERY_ID
+                    and task["source"] == MEISSEN_ARCHIVE_SOURCE
+                ):
+                    task_result_limit = max(result_limit, MEISSEN_ARCHIVE_RESULT_LIMIT)
                 batch = collect_batch(
                     task["source"],
                     task["query_text"],
-                    limit=result_limit,
+                    limit=task_result_limit,
                     start_page=int(task["start_page"]),
                     page_count=int(task["page_count"]),
                     page_interval=interval,
