@@ -597,6 +597,28 @@ JEWELRY_WORDS = {
     "schmuck",
 }
 
+SIGNED_DESIGNER_JEWELRY_MARKERS = {
+    "bengel",
+    "boucher",
+    "coro",
+    "eisenberg",
+    "fahrner",
+    "haskell",
+    "hobe",
+    "instone",
+    "jensen",
+    "joseff",
+    "lapponia",
+    "murrle",
+    "napier",
+    "pineda",
+    "schreiner",
+    "sphinx",
+    "trifari",
+    "weckstrom",
+}
+SIGNATURE_WORDS = {"mark", "marked", "signature", "signed", "signiert"}
+
 METALWARE_STYLE_WORDS = {
     "art deco",
     "art nouveau",
@@ -775,7 +797,11 @@ def relevant_to_query(query: str, result: dict[str, Any]) -> bool:
     normalized_query = _normalize(query)
 
     if normalized_query == "signierter vintage designerschmuck":
-        return any(word in haystack.split() for word in JEWELRY_WORDS)
+        words = set(haystack.split())
+        has_jewelry = bool(words.intersection(JEWELRY_WORDS))
+        has_signature = bool(words.intersection(SIGNATURE_WORDS))
+        has_designer = bool(words.intersection(SIGNED_DESIGNER_JEWELRY_MARKERS))
+        return has_jewelry and (has_signature or has_designer)
     if normalized_query == "jugendstil art deco metallwaren":
         return any(word in haystack for word in METALWARE_STYLE_WORDS) and any(
             word in haystack.split() for word in METALWARE_WORDS

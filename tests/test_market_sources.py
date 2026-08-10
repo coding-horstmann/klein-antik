@@ -72,6 +72,27 @@ class MarketSourceTests(unittest.TestCase):
             )
         )
 
+    def test_broad_signed_jewelry_requires_signature_or_designer_signal(self) -> None:
+        query = "Signierter Vintage-Designerschmuck"
+        self.assertFalse(
+            relevant_to_query(
+                query,
+                {"title": "JEWELRY, 2 pcs. Brooch and necklace", "raw_result": {}},
+            )
+        )
+        self.assertTrue(
+            relevant_to_query(
+                query,
+                {"title": "Signed Trifari floral brooch", "raw_result": {}},
+            )
+        )
+        self.assertTrue(
+            relevant_to_query(
+                query,
+                {"title": "Bjorn Weckstrom bronze ring", "raw_result": {}},
+            )
+        )
+
     def test_relevance_handles_maker_and_designer_queries(self) -> None:
         result = {
             "title": "Tapio Wirkkala for Iittala art glass vase",
