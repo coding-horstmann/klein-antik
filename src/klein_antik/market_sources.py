@@ -9,7 +9,7 @@ import unicodedata
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 import requests
 from bs4 import BeautifulSoup, Tag
@@ -26,16 +26,20 @@ SOURCE_PAGE_SIZES = {
     "quittenbaum": 15,
     "lempertz": 10,
     "bruun_rasmussen": 30,
+    "van_ham": 20,
+    "dorotheum": 200,
     "liveauctioneers": 24,
     "invaluable": 24,
     "christies": 12,
     "heritage": 24,
 }
 SOURCE_MAX_PAGES = {
-    "auctionet": 100,
+    "auctionet": 200,
     "quittenbaum": 5,
     "lempertz": 2,
     "bruun_rasmussen": 1,
+    "van_ham": 1,
+    "dorotheum": 1,
     "liveauctioneers": 1,
     "invaluable": 1,
     "christies": 1,
@@ -47,6 +51,8 @@ SOURCE_LABELS = {
     "quittenbaum": "Quittenbaum",
     "lempertz": "Lempertz",
     "bruun_rasmussen": "Bruun Rasmussen",
+    "van_ham": "Van Ham",
+    "dorotheum": "Dorotheum",
     "liveauctioneers": "LiveAuctioneers",
     "invaluable": "Invaluable",
     "christies": "Christie's",
@@ -72,11 +78,14 @@ EXTERNAL_PILOT_QUERY_IDS = (
 MEISSEN_ARCHIVE_QUERY_ID = "meissen"
 MEISSEN_ARCHIVE_SOURCE = "auctionet"
 MEISSEN_ARCHIVE_START_PAGE = 6
-MEISSEN_ARCHIVE_TARGET_PAGE = 100
+MEISSEN_ARCHIVE_TARGET_PAGE = 200
 MEISSEN_ARCHIVE_RESULT_LIMIT = (
     (MEISSEN_ARCHIVE_TARGET_PAGE - MEISSEN_ARCHIVE_START_PAGE + 1)
     * SOURCE_PAGE_SIZES[MEISSEN_ARCHIVE_SOURCE]
 )
+MEISSEN_PORCELAIN_PILOT_SOURCES = ("van_ham", "dorotheum")
+MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS = {"van_ham": 1, "dorotheum": 1}
+DOROTHEUM_MEISSEN_AUCTION_URL = "https://www.dorotheum.com/en/a/123070/"
 
 CATEGORY_SOURCES = {
     "meissen_porcelain": ("lempertz", "auctionet"),
@@ -155,6 +164,8 @@ def collect_batch(
         "quittenbaum": collect_quittenbaum,
         "lempertz": collect_lempertz,
         "bruun_rasmussen": collect_bruun_rasmussen,
+        "van_ham": collect_van_ham,
+        "dorotheum": collect_dorotheum,
         "liveauctioneers": collect_liveauctioneers,
         "invaluable": collect_invaluable,
         "christies": collect_christies,
@@ -328,6 +339,177 @@ def collect_auctionet(
                 raw_result=item,
             )
         )
+    return [result for result in results if result["source_item_id"] and result["title"]]
+
+
+def collect_van_ham(
+    session: requests.Session,
+    query: str,
+    *,
+    limit: int,
+    page: int,
+) -> list[dict[str, Any]]:
+    # Van Ham publishes completed lots in its own searchable auction archive.
+    # The item page is the authoritative place for the realised price and image.
+    encoded_query = quote(query, safe="")
+    response = _get(
+        session,
+        (
+            "https://auction.van-ham.com/en/--search-1-block-328-"
+            f"ff_tags-{encoded_query}-order_by_sort-1-search_closed-browse.html"
+        ),
+        params={"page": page} if page > 1 else None,
+    )
+    soup = BeautifulSoup(response.text, "html.parser")
+    candidates: list[tuple[str, str, str]] = []
+    seen_urls: set[str] = set()
+    for link in soup.select('a[href*="-item.html"]'):
+        if not isinstance(link, Tag):
+            continue
+        item_url = urljoin("https://auction.van-ham.com", str(link.get("href") or ""))
+        if not item_url or item_url in seen_urls:
+            continue
+        seen_urls.add(item_url)
+        card = link.find_parent(["article", "li", "div"])
+        image_node = card.select_one("img[src]") if isinstance(card, Tag) else None
+        fallback_title = _clean_text(link.get_text(" ", strip=True))
+        if not fallback_title and image_node:
+            fallback_title = _clean_text(str(image_node.get("alt") or ""))
+        candidates.append(
+            (
+                item_url,
+                fallback_title,
+                urljoin(
+                    "https://auction.van-ham.com",
+                    str(image_node.get("src") or "") if image_node else "",
+                ),
+            )
+        )
+
+    results: list[dict[str, Any]] = []
+    for index, (item_url, fallback_title, fallback_image) in enumerate(candidates[:limit]):
+        detail = _get(session, item_url)
+        detail_soup = BeautifulSoup(detail.text, "html.parser")
+        title_node = detail_soup.select_one("h1")
+        title = _clean_text(title_node.get_text(" ", strip=True)) if title_node else ""
+        title = re.sub(r"^Lot\s+[^|]+\|\s*", "", title, flags=re.IGNORECASE)
+        title = title or fallback_title
+        detail_text = _clean_text(detail_soup.get_text(" ", strip=True))
+        lower_text = detail_text.lower()
+        price_match = re.search(
+            r"(?:result|ergebnis)\s*:\s*"
+            r"(?:\((?:incl\. premium|inkl\. aufgeld)\)\s*)?"
+            r"((?:EUR\s*)?[\d.,\s]+(?:€|EUR)?)",
+            detail_text,
+            flags=re.IGNORECASE,
+        )
+        price_raw = _clean_text(price_match.group(1)) if price_match else ""
+        price, currency = parse_money(price_raw)
+        estimate_match = re.search(
+            r"(?:estimate|taxe)\s*:?\s*(.*?)\s*(?:result|ergebnis)\s*:",
+            detail_text,
+            flags=re.IGNORECASE,
+        )
+        estimate_raw = _clean_text(estimate_match.group(1)) if estimate_match else ""
+        image_node = detail_soup.select_one('meta[property="og:image"][content]')
+        image_url = (
+            str(image_node.get("content") or "") if image_node else fallback_image
+        )
+        sale_date_match = re.search(
+            r"Auction\s*\|\s*([^|]+?)\s*\|",
+            detail_text,
+            flags=re.IGNORECASE,
+        )
+        sale_date = _clean_text(sale_date_match.group(1)) if sale_date_match else ""
+        sold = "lot was sold" in lower_text or "los ist verkauft" in lower_text
+        results.append(
+            _result(
+                source="van_ham",
+                source_item_id=_id_from_url(item_url),
+                title=title,
+                url=item_url,
+                image_url=image_url,
+                price_status="sold" if sold and price is not None else "unknown",
+                price_value=price if sold else None,
+                price_raw=price_raw if sold else "",
+                currency=currency if sold else "",
+                price_basis=(
+                    "premium_included"
+                    if "incl. premium" in lower_text or "inkl. aufgeld" in lower_text
+                    else "realised"
+                )
+                if sold and price is not None
+                else "unknown",
+                estimate_raw=estimate_raw,
+                sale_date=sale_date,
+                attribution=_attribution(title),
+                raw_result={"result": price_raw, "estimate": estimate_raw},
+            )
+        )
+        if index + 1 < min(len(candidates), limit):
+            time.sleep(0.5)
+    return [result for result in results if result["source_item_id"] and result["title"]]
+
+
+def collect_dorotheum(
+    session: requests.Session,
+    query: str,
+    *,
+    limit: int,
+    page: int,
+) -> list[dict[str, Any]]:
+    # This curated completed Dorotheum auction is dedicated to Meissen porcelain.
+    # It is deliberately a one-page pilot so its result quality can be reviewed first.
+    response = _get(session, DOROTHEUM_MEISSEN_AUCTION_URL)
+    soup = BeautifulSoup(response.text, "html.parser")
+    results: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for link in soup.select('a[href*="/en/l/"]'):
+        if not isinstance(link, Tag):
+            continue
+        item_url = urljoin("https://www.dorotheum.com", str(link.get("href") or ""))
+        if not item_url or item_url in seen_urls:
+            continue
+        seen_urls.add(item_url)
+        card = link.find_parent(["article", "li", "div"])
+        card_text = _clean_text(card.get_text(" ", strip=True)) if isinstance(card, Tag) else ""
+        title_node = (
+            card.select_one("h1, h2, h3, h4, .lot-title, .item-title")
+            if isinstance(card, Tag)
+            else None
+        )
+        title = _clean_text(title_node.get_text(" ", strip=True)) if title_node else ""
+        title = title or _clean_text(link.get_text(" ", strip=True))
+        price_match = re.search(
+            r"Realized\s+price\s*:\s*\**\s*((?:EUR\s*)?[\d.,\s]+(?:€|EUR)?)",
+            card_text,
+            flags=re.IGNORECASE,
+        )
+        price_raw = _clean_text(price_match.group(1)) if price_match else ""
+        price, currency = parse_money(price_raw)
+        image_node = card.select_one("img[src]") if isinstance(card, Tag) else None
+        results.append(
+            _result(
+                source="dorotheum",
+                source_item_id=_id_from_url(item_url),
+                title=title,
+                url=item_url,
+                image_url=urljoin(
+                    "https://www.dorotheum.com",
+                    str(image_node.get("src") or "") if image_node else "",
+                ),
+                price_status="sold" if price is not None else "unknown",
+                price_value=price,
+                price_raw=price_raw,
+                currency=currency,
+                price_basis="premium_included" if price is not None else "unknown",
+                estimate_raw="",
+                attribution=_attribution(title),
+                raw_result={"auction_url": DOROTHEUM_MEISSEN_AUCTION_URL},
+            )
+        )
+        if len(results) >= limit:
+            break
     return [result for result in results if result["source_item_id"] and result["title"]]
 
 

@@ -59,8 +59,8 @@ class MarketSourceTests(unittest.TestCase):
     def test_meissen_archive_backfill_has_a_bounded_deep_range(self) -> None:
         self.assertEqual(MEISSEN_ARCHIVE_SOURCE, "auctionet")
         self.assertEqual(MEISSEN_ARCHIVE_START_PAGE, 6)
-        self.assertEqual(MEISSEN_ARCHIVE_TARGET_PAGE, 100)
-        self.assertEqual(SOURCE_MAX_PAGES[MEISSEN_ARCHIVE_SOURCE], 100)
+        self.assertEqual(MEISSEN_ARCHIVE_TARGET_PAGE, 200)
+        self.assertEqual(SOURCE_MAX_PAGES[MEISSEN_ARCHIVE_SOURCE], 200)
         self.assertEqual(
             MEISSEN_ARCHIVE_RESULT_LIMIT,
             (MEISSEN_ARCHIVE_TARGET_PAGE - MEISSEN_ARCHIVE_START_PAGE + 1)
@@ -458,6 +458,57 @@ class MarketSourceTests(unittest.TestCase):
         self.assertEqual(results[0]["price_value"], Decimal("2250"))
         self.assertEqual(results[0]["price_basis"], "premium_included")
         self.assertEqual(len(session.calls), 2)
+
+    def test_van_ham_keeps_realised_price_and_source_link(self) -> None:
+        search_page = """
+        <article>
+          <a href="/en/meissen-bowl--id-52724-item.html">Meissen porcelain bowl</a>
+          <img src="/images/52724.jpg">
+        </article>
+        """
+        detail_page = """
+        <html><head><meta property="og:image" content="https://images.example/52724.jpg"></head>
+        <body>
+          Lot was sold
+          <h1>Lot 1255 | Meissen porcelain bowl</h1>
+          Auction | 25.01.2023 | Preview
+          Estimate: EUR 1,200 - 1,500
+          Result: (incl. premium) EUR 2,640
+        </body></html>
+        """
+        results = collect(
+            "van_ham",
+            "Meissen",
+            session=FakeSession([search_page, detail_page]),
+            limit=20,
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["price_status"], "sold")
+        self.assertEqual(results[0]["price_value"], Decimal("2640"))
+        self.assertEqual(results[0]["price_basis"], "premium_included")
+        self.assertEqual(results[0]["image_url"], "https://images.example/52724.jpg")
+
+    def test_dorotheum_keeps_realised_price_and_source_link(self) -> None:
+        auction_page = """
+        <article>
+          <a href="/en/l/9950558/">Meissen porcelain plate</a>
+          <img src="/images/9950558.jpg">
+          <span>Realized price: EUR 130</span>
+        </article>
+        """
+        results = collect(
+            "dorotheum",
+            "Meissen",
+            session=FakeSession([auction_page]),
+            limit=200,
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["price_status"], "sold")
+        self.assertEqual(results[0]["price_value"], Decimal("130"))
+        self.assertEqual(results[0]["price_basis"], "premium_included")
+        self.assertTrue(results[0]["url"].endswith("/en/l/9950558/"))
 
 
 if __name__ == "__main__":

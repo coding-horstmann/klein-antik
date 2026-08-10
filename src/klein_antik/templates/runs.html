@@ -18,6 +18,15 @@
     </button>
     <button
       class="button secondary"
+      id="start-meissen-porcelain-pilot"
+      type="button"
+      {% if not worker or not worker.online %}disabled{% endif %}
+    >
+      <i data-lucide="landmark" aria-hidden="true"></i>
+      Van Ham und Dorotheum testen
+    </button>
+    <button
+      class="button secondary"
       id="start-source-pilot"
       type="button"
       {% if not worker or not worker.online %}disabled{% endif %}

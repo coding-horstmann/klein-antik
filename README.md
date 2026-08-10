@@ -108,10 +108,15 @@ neuen Quellen werden erst nach der Ergebnispruefung in den regulaeren
 Aktualisierungsplan aufgenommen.
 
 `Meissen Archiv ausbauen` liest nur den Suchbegriff `Meissen` bei Auctionet
-bis Seite 100. Der Lauf speichert seinen Cursor, damit ein erneuter
+bis Seite 200. Der Lauf speichert seinen Cursor, damit ein erneuter
 Start bei der naechsten noch nicht gelesenen Seite beginnt. Die zweite
 Schreibweise `Meissen mit Umlaut` wird dafuer nicht doppelt abgefragt, weil die Quelle beide
 Schreibweisen gleich behandelt.
+
+`Van Ham und Dorotheum testen` fuehrt einen getrennten Meissen-Porzellan-Pilot
+mit den beiden Auktionsarchiven aus. Erst wenn Bilder, Links, Verkaufspreise
+und Relevanz im Archiv geprueft sind, werden die Quellen in den Standardlauf
+uebernommen.
 
 ## Lokal pruefen
 

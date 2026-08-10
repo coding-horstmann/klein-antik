@@ -14,6 +14,8 @@ from .market_sources import (
     MEISSEN_ARCHIVE_QUERY_ID,
     MEISSEN_ARCHIVE_RESULT_LIMIT,
     MEISSEN_ARCHIVE_SOURCE,
+    MEISSEN_PORCELAIN_PILOT_SOURCES,
+    SOURCE_PAGE_SIZES,
     SOURCE_LABELS,
     CollectedBatch,
     build_session,
@@ -391,12 +393,17 @@ def process_run(
             )
             try:
                 task_result_limit = result_limit
-                if (
-                    task["run_kind"] == "backfill"
-                    and task["query_id"] == MEISSEN_ARCHIVE_QUERY_ID
-                    and task["source"] == MEISSEN_ARCHIVE_SOURCE
-                ):
-                    task_result_limit = max(result_limit, MEISSEN_ARCHIVE_RESULT_LIMIT)
+                if task["query_id"] == MEISSEN_ARCHIVE_QUERY_ID:
+                    if task["source"] == MEISSEN_ARCHIVE_SOURCE:
+                        task_result_limit = max(
+                            result_limit, MEISSEN_ARCHIVE_RESULT_LIMIT
+                        )
+                    elif task["source"] in MEISSEN_PORCELAIN_PILOT_SOURCES:
+                        task_result_limit = max(
+                            result_limit,
+                            SOURCE_PAGE_SIZES[task["source"]]
+                            * int(task["page_count"]),
+                        )
                 batch = collect_batch(
                     task["source"],
                     task["query_text"],

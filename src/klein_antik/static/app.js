@@ -63,8 +63,14 @@ function bindRunControls() {
   bindStart(
     "start-meissen-backfill",
     "/api/runs/meissen-backfill",
-    "Das Meissen-Archiv von Auctionet bis Seite 100 einlesen? Bereits verarbeitete Seiten werden uebersprungen.",
+    "Das Meissen-Archiv von Auctionet bis Seite 200 einlesen? Bereits verarbeitete Seiten werden uebersprungen.",
     "Meissen-Archivlauf"
+  );
+  bindStart(
+    "start-meissen-porcelain-pilot",
+    "/api/runs/meissen-porcelain-pilot",
+    "Van Ham und Dorotheum mit Meissen-Porzellan testen? Die Quellen bleiben bis zur Auswertung getrennt vom Standardlauf.",
+    "Meissen-Quellenpilot"
   );
 
   document.querySelectorAll(".cancel-run").forEach((button) => {
