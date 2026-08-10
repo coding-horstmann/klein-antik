@@ -4,11 +4,13 @@ import html
 import json
 import unittest
 from decimal import Decimal
+from unittest.mock import patch
 
 from klein_antik.catalog import load_queries
 from klein_antik.market_sources import (
     collect,
     collect_batch,
+    _external_request_headers,
     parse_money,
     relevant_to_query,
     search_query_for,
@@ -99,6 +101,29 @@ class MarketSourceTests(unittest.TestCase):
                 self.assertEqual(results[0]["price_value"], amount)
                 self.assertEqual(results[0]["currency"], currency)
                 self.assertTrue(results[0]["url"].startswith("https://"))
+
+    def test_external_source_auth_headers_are_isolated_per_source(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "MARKET_HERITAGE_COOKIE": "session=approved",
+                "MARKET_HERITAGE_AUTHORIZATION": "Bearer approved-token",
+                "MARKET_CHRISTIES_COOKIE": "session=christies",
+            },
+            clear=True,
+        ):
+            self.assertEqual(
+                _external_request_headers("heritage"),
+                {
+                    "Cookie": "session=approved",
+                    "Authorization": "Bearer approved-token",
+                },
+            )
+            self.assertEqual(
+                _external_request_headers("christies"),
+                {"Cookie": "session=christies"},
+            )
+            self.assertEqual(_external_request_headers("invaluable"), {})
 
     def test_relevance_rejects_auction_search_noise(self) -> None:
         furniture = {

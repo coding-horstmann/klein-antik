@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import time
 import unicodedata
@@ -19,6 +20,7 @@ USER_AGENT = (
     "(+https://klein-antik-dashboard-production.up.railway.app/)"
 )
 REQUEST_TIMEOUT_SECONDS = 35
+EXTERNAL_REQUEST_TIMEOUT_SECONDS = 12
 SOURCE_PAGE_SIZES = {
     "auctionet": 48,
     "quittenbaum": 15,
@@ -209,13 +211,17 @@ def _get(
     url: str,
     *,
     params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = REQUEST_TIMEOUT_SECONDS,
+    attempts: int = 3,
 ) -> requests.Response:
-    for attempt in range(3):
+    for attempt in range(attempts):
         try:
             response = session.get(
                 url,
                 params=params,
-                timeout=REQUEST_TIMEOUT_SECONDS,
+                headers=headers,
+                timeout=timeout,
                 allow_redirects=True,
             )
             response.raise_for_status()
@@ -223,10 +229,39 @@ def _get(
         except requests.RequestException as exc:
             status_code = getattr(getattr(exc, "response", None), "status_code", None)
             retryable = status_code is None or status_code == 429 or status_code >= 500
-            if not retryable or attempt == 2:
+            if not retryable or attempt == attempts - 1:
                 raise MarketSourceError(f"{url}: {exc}") from exc
             time.sleep(2 * (attempt + 1))
     raise MarketSourceError(f"{url}: Anfrage fehlgeschlagen")
+
+
+def _get_external(
+    session: requests.Session,
+    source: str,
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+) -> requests.Response:
+    return _get(
+        session,
+        url,
+        params=params,
+        headers=_external_request_headers(source),
+        timeout=EXTERNAL_REQUEST_TIMEOUT_SECONDS,
+        attempts=1,
+    )
+
+
+def _external_request_headers(source: str) -> dict[str, str]:
+    prefix = f"MARKET_{source.upper()}"
+    headers: dict[str, str] = {}
+    cookie = os.environ.get(f"{prefix}_COOKIE", "").strip()
+    authorization = os.environ.get(f"{prefix}_AUTHORIZATION", "").strip()
+    if cookie:
+        headers["Cookie"] = cookie
+    if authorization:
+        headers["Authorization"] = authorization
+    return headers
 
 
 def collect_auctionet(
@@ -528,8 +563,9 @@ def collect_liveauctioneers(
     limit: int,
     page: int,
 ) -> list[dict[str, Any]]:
-    response = _get(
+    response = _get_external(
         session,
+        "liveauctioneers",
         f"https://www.liveauctioneers.com/search/{_slug(query)}",
         params={"page": page},
     )
@@ -549,8 +585,9 @@ def collect_invaluable(
     limit: int,
     page: int,
 ) -> list[dict[str, Any]]:
-    response = _get(
+    response = _get_external(
         session,
+        "invaluable",
         "https://www.invaluable.com/search",
         params={"keyword": query, "page": page},
     )
@@ -570,8 +607,9 @@ def collect_christies(
     limit: int,
     page: int,
 ) -> list[dict[str, Any]]:
-    response = _get(
+    response = _get_external(
         session,
+        "christies",
         "https://www.christies.com/en/results",
         params={"keyword": query, "page": page},
     )
@@ -591,8 +629,9 @@ def collect_heritage(
     limit: int,
     page: int,
 ) -> list[dict[str, Any]]:
-    response = _get(
+    response = _get_external(
         session,
+        "heritage",
         "https://www.ha.com/c/search-results.zx",
         params={"Ntt": query, "page": page},
     )

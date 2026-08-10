@@ -82,6 +82,21 @@ MARKET_PAGES_PER_SOURCE=2
 MARKET_BACKFILL_PAGES_PER_SOURCE=2
 ```
 
+Fuer den Quellenpilot koennen autorisierte Zugangsdaten pro Quelle ausschliesslich
+im Importer hinterlegt werden. Beide Variablen sind optional und werden weder
+geloggt noch im Dashboard angezeigt:
+
+```text
+MARKET_LIVEAUCTIONEERS_COOKIE=<autorisierte Session>
+MARKET_LIVEAUCTIONEERS_AUTHORIZATION=<Authorization-Wert>
+MARKET_INVALUABLE_COOKIE=<autorisierte Session>
+MARKET_INVALUABLE_AUTHORIZATION=<Authorization-Wert>
+MARKET_CHRISTIES_COOKIE=<autorisierte Session>
+MARKET_CHRISTIES_AUTHORIZATION=<Authorization-Wert>
+MARKET_HERITAGE_COOKIE=<autorisierte Session>
+MARKET_HERITAGE_AUTHORIZATION=<Authorization-Wert>
+```
+
 `Marktdaten aktualisieren` liest immer die ersten zwei Seiten einer freigegebenen
 Quelle. `Archiv erweitern` beginnt danach bei Seite 3 und speichert pro
 Suchbegriff und Quelle einen Cursor. Ein Backfill liest jeweils die naechsten
