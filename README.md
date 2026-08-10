@@ -14,8 +14,7 @@ Auktionsarchive und stellt die Ergebnisse in einem Review-Dashboard bereit.
 - dokumentierte Preisgrundlage, etwa Hammerpreis oder Preis inklusive Aufgeld
 - Bilder und Links zur Originalquelle
 - Deduplizierung je Quelle und Objekt-ID
-- Bewertung, Verwendungsart, Tags und Notizen je Objekt
-- Bewertung und Notiz je Suchbegriff
+- Preisuebersicht je Suchbegriff und Waehrung mit Median und Preisbereich
 - nachvollziehbare Laeufe und fehlgeschlagene Quellenabfragen in Postgres
 - getrennte Aktualisierung und fortlaufender Archiv-Backfill je Quelle und Suchbegriff
 - keine SerpApi- oder eBay-API-Kosten

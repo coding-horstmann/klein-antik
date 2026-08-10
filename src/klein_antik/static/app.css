@@ -884,7 +884,7 @@ textarea:hover {
 
 .query-table {
   width: 100%;
-  min-width: 1180px;
+  min-width: 940px;
   border-collapse: collapse;
   background: var(--surface);
 }
@@ -920,12 +920,48 @@ textarea:hover {
   font-size: 11px;
 }
 
-.query-table select {
-  width: 145px;
+.query-link,
+.query-count {
+  color: var(--text);
+  font-weight: 700;
 }
 
-.query-table textarea {
-  min-width: 220px;
+.query-link:hover,
+.query-count:hover {
+  color: var(--green);
+}
+
+.price-summary-cell {
+  min-width: 260px;
+}
+
+.price-summary {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.price-summary + .price-summary {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+}
+
+.price-summary strong,
+.price-summary small {
+  display: block;
+}
+
+.price-summary small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.price-summary.empty {
+  color: var(--muted);
 }
 
 .run-readiness strong {

@@ -349,27 +349,54 @@ def create_app() -> Flask:
                 f"""
                 SELECT
                     q.*,
-                    COUNT(DISTINCT qm.listing_id) AS listing_count,
-                    COUNT(DISTINCT qm.listing_id) FILTER (
-                        WHERE l.price_status = 'sold'
-                    ) AS sold_count,
-                    COUNT(DISTINCT qm.listing_id) FILTER (
-                        WHERE l.price_status = 'ask'
-                    ) AS ask_count,
-                    COUNT(DISTINCT qm.listing_id) FILTER (
-                        WHERE l.price_status = 'unsold'
-                    ) AS unsold_count,
-                    COUNT(DISTINCT qm.listing_id) FILTER (
-                        WHERE COALESCE(r.content_status, 'unreviewed') = 'usable'
-                    ) AS usable_count,
-                    array_remove(array_agg(DISTINCT l.source ORDER BY l.source), NULL)
-                        AS source_ids
+                    stats.listing_count,
+                    stats.sold_count,
+                    stats.source_ids,
+                    stats.price_summaries
                 FROM search_queries q
-                LEFT JOIN market_listing_query_matches qm ON qm.query_id = q.id
-                LEFT JOIN market_listings l ON l.id = qm.listing_id
-                LEFT JOIN market_listing_reviews r ON r.listing_id = l.id
+                LEFT JOIN LATERAL (
+                    SELECT
+                        COUNT(DISTINCT qm.listing_id) AS listing_count,
+                        COUNT(DISTINCT qm.listing_id) FILTER (
+                            WHERE l.price_status = 'sold'
+                        ) AS sold_count,
+                        array_remove(array_agg(DISTINCT l.source ORDER BY l.source), NULL)
+                            AS source_ids,
+                        COALESCE((
+                            SELECT jsonb_agg(
+                                jsonb_build_object(
+                                    'currency', price.currency,
+                                    'count', price.count,
+                                    'minimum', price.minimum,
+                                    'median', price.median,
+                                    'maximum', price.maximum
+                                )
+                                ORDER BY price.currency
+                            )
+                            FROM (
+                                SELECT
+                                    priced_listing.currency,
+                                    COUNT(*) AS count,
+                                    MIN(priced_listing.price_value) AS minimum,
+                                    percentile_cont(0.5) WITHIN GROUP (
+                                        ORDER BY priced_listing.price_value
+                                    ) AS median,
+                                    MAX(priced_listing.price_value) AS maximum
+                                FROM market_listing_query_matches priced_match
+                                JOIN market_listings priced_listing
+                                    ON priced_listing.id = priced_match.listing_id
+                                WHERE priced_match.query_id = q.id
+                                  AND priced_listing.price_status = 'sold'
+                                  AND priced_listing.price_value IS NOT NULL
+                                  AND priced_listing.currency <> ''
+                                GROUP BY priced_listing.currency
+                            ) price
+                        ), '[]'::jsonb) AS price_summaries
+                    FROM market_listing_query_matches qm
+                    JOIN market_listings l ON l.id = qm.listing_id
+                    WHERE qm.query_id = q.id
+                ) stats ON TRUE
                 {where}
-                GROUP BY q.id
                 ORDER BY q.position
                 """,
                 params,
