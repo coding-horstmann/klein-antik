@@ -186,7 +186,7 @@ def create_app() -> Flask:
         search = request.args.get("q", "").strip()
         sort = request.args.get("sort", "newest").strip()
         page = max(1, min(10000, request.args.get("page", 1, type=int)))
-        page_size = 60
+        page_size = 100
         where = ["TRUE"]
         params: list[Any] = []
 
