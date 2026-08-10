@@ -83,8 +83,8 @@ MEISSEN_ARCHIVE_RESULT_LIMIT = (
     (MEISSEN_ARCHIVE_TARGET_PAGE - MEISSEN_ARCHIVE_START_PAGE + 1)
     * SOURCE_PAGE_SIZES[MEISSEN_ARCHIVE_SOURCE]
 )
-MEISSEN_PORCELAIN_PILOT_SOURCES = ("van_ham", "dorotheum")
-MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS = {"van_ham": 1, "dorotheum": 1}
+MEISSEN_PORCELAIN_PILOT_SOURCES = ("van_ham",)
+MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS = {"van_ham": 1}
 DOROTHEUM_MEISSEN_AUCTION_URL = "https://www.dorotheum.com/en/a/123070/"
 
 CATEGORY_SOURCES = {
@@ -415,12 +415,8 @@ def collect_van_ham(
         image_url = (
             str(image_node.get("content") or "") if image_node else fallback_image
         )
-        sale_date_match = re.search(
-            r"Auction\s*\|\s*([^|]+?)\s*\|",
-            detail_text,
-            flags=re.IGNORECASE,
-        )
-        sale_date = _clean_text(sale_date_match.group(1)) if sale_date_match else ""
+        sale_date_match = re.search(r"\b\d{2}\.\d{2}\.\d{4}\b", detail_text)
+        sale_date = _clean_text(sale_date_match.group(0)) if sale_date_match else ""
         sold = "lot was sold" in lower_text or "los ist verkauft" in lower_text
         results.append(
             _result(

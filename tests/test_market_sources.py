@@ -488,6 +488,7 @@ class MarketSourceTests(unittest.TestCase):
         self.assertEqual(results[0]["price_value"], Decimal("2640"))
         self.assertEqual(results[0]["price_basis"], "premium_included")
         self.assertEqual(results[0]["image_url"], "https://images.example/52724.jpg")
+        self.assertEqual(results[0]["sale_date"], "25.01.2023")
 
     def test_dorotheum_keeps_realised_price_and_source_link(self) -> None:
         auction_page = """

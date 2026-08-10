@@ -113,10 +113,12 @@ Start bei der naechsten noch nicht gelesenen Seite beginnt. Die zweite
 Schreibweise `Meissen mit Umlaut` wird dafuer nicht doppelt abgefragt, weil die Quelle beide
 Schreibweisen gleich behandelt.
 
-`Van Ham und Dorotheum testen` fuehrt einen getrennten Meissen-Porzellan-Pilot
-mit den beiden Auktionsarchiven aus. Erst wenn Bilder, Links, Verkaufspreise
-und Relevanz im Archiv geprueft sind, werden die Quellen in den Standardlauf
-uebernommen.
+`Van Ham testen` fuehrt einen getrennten Meissen-Porzellan-Pilot mit dem
+Auktionsarchiv aus. Erst wenn Bilder, Links, Verkaufspreise und Relevanz im
+Archiv geprueft sind, wird die Quelle in den Standardlauf uebernommen.
+Dorotheum bleibt als moegliche Quelle dokumentiert, wird aber nicht automatisch
+abgerufen, weil der Importer dort derzeit eine ausdrueckliche HTTP-403-Sperre
+erhaelt.
 
 ## Lokal pruefen
 
