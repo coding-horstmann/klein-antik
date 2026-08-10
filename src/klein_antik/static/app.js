@@ -63,7 +63,7 @@ function bindRunControls() {
   bindStart(
     "start-meissen-backfill",
     "/api/runs/meissen-backfill",
-    "Das Meissen-Archiv von Auctionet von Seite 6 bis 50 einlesen? Bereits verarbeitete Seiten werden uebersprungen.",
+    "Das Meissen-Archiv von Auctionet bis Seite 100 einlesen? Bereits verarbeitete Seiten werden uebersprungen.",
     "Meissen-Archivlauf"
   );
 

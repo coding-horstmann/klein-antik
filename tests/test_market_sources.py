@@ -59,8 +59,8 @@ class MarketSourceTests(unittest.TestCase):
     def test_meissen_archive_backfill_has_a_bounded_deep_range(self) -> None:
         self.assertEqual(MEISSEN_ARCHIVE_SOURCE, "auctionet")
         self.assertEqual(MEISSEN_ARCHIVE_START_PAGE, 6)
-        self.assertEqual(MEISSEN_ARCHIVE_TARGET_PAGE, 50)
-        self.assertEqual(SOURCE_MAX_PAGES[MEISSEN_ARCHIVE_SOURCE], 50)
+        self.assertEqual(MEISSEN_ARCHIVE_TARGET_PAGE, 100)
+        self.assertEqual(SOURCE_MAX_PAGES[MEISSEN_ARCHIVE_SOURCE], 100)
         self.assertEqual(
             MEISSEN_ARCHIVE_RESULT_LIMIT,
             (MEISSEN_ARCHIVE_TARGET_PAGE - MEISSEN_ARCHIVE_START_PAGE + 1)

@@ -108,7 +108,7 @@ neuen Quellen werden erst nach der Ergebnispruefung in den regulaeren
 Aktualisierungsplan aufgenommen.
 
 `Meissen Archiv ausbauen` liest nur den Suchbegriff `Meissen` bei Auctionet
-von Seite 6 bis Seite 50. Der Lauf speichert seinen Cursor, damit ein erneuter
+bis Seite 100. Der Lauf speichert seinen Cursor, damit ein erneuter
 Start bei der naechsten noch nicht gelesenen Seite beginnt. Die zweite
 Schreibweise `Meissen mit Umlaut` wird dafuer nicht doppelt abgefragt, weil die Quelle beide
 Schreibweisen gleich behandelt.

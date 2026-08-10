@@ -1143,7 +1143,7 @@ def create_app() -> Flask:
                 int(cursor["next_page"]) if cursor else MEISSEN_ARCHIVE_START_PAGE,
             )
             if start_page > MEISSEN_ARCHIVE_TARGET_PAGE:
-                return jsonify({"error": "Das Meißen-Archiv bis Seite 50 ist bereits eingelesen."}), 409
+                return jsonify({"error": "Das Meißen-Archiv bis Seite 100 ist bereits eingelesen."}), 409
 
             page_count = MEISSEN_ARCHIVE_TARGET_PAGE - start_page + 1
             run = conn.execute(
