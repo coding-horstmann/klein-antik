@@ -54,6 +54,12 @@ function bindRunControls() {
     "Die jeweils naechsten zwei Archivseiten je Suchbegriff und Quelle abfragen? Bereits abgearbeitete Seiten werden nicht wiederholt.",
     "Archiv-Backfill"
   );
+  bindStart(
+    "start-source-pilot",
+    "/api/runs/source-pilot",
+    "Die vier neuen Quellen mit sieben repraesentativen Suchbegriffen testen? Preise, Links und Relevanz werden getrennt gespeichert.",
+    "Quellenpilot"
+  );
 
   document.querySelectorAll(".cancel-run").forEach((button) => {
     button.addEventListener("click", async () => {

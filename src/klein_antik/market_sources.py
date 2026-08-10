@@ -24,12 +24,20 @@ SOURCE_PAGE_SIZES = {
     "quittenbaum": 15,
     "lempertz": 10,
     "bruun_rasmussen": 30,
+    "liveauctioneers": 24,
+    "invaluable": 24,
+    "christies": 12,
+    "heritage": 24,
 }
 SOURCE_MAX_PAGES = {
     "auctionet": 5,
     "quittenbaum": 5,
     "lempertz": 2,
     "bruun_rasmussen": 1,
+    "liveauctioneers": 1,
+    "invaluable": 1,
+    "christies": 1,
+    "heritage": 1,
 }
 
 SOURCE_LABELS = {
@@ -37,7 +45,27 @@ SOURCE_LABELS = {
     "quittenbaum": "Quittenbaum",
     "lempertz": "Lempertz",
     "bruun_rasmussen": "Bruun Rasmussen",
+    "liveauctioneers": "LiveAuctioneers",
+    "invaluable": "Invaluable",
+    "christies": "Christie's",
+    "heritage": "Heritage Auctions",
 }
+
+EXTERNAL_PILOT_SOURCES = (
+    "liveauctioneers",
+    "invaluable",
+    "christies",
+    "heritage",
+)
+EXTERNAL_PILOT_QUERY_IDS = (
+    "meissen",
+    "miriam-haskell",
+    "wmf-vase",
+    "orrefors-signed",
+    "georg-jensen-silver",
+    "paavo-tynell-lamp",
+    "lisa-larson-figure",
+)
 
 CATEGORY_SOURCES = {
     "meissen_porcelain": ("lempertz", "auctionet"),
@@ -116,6 +144,10 @@ def collect_batch(
         "quittenbaum": collect_quittenbaum,
         "lempertz": collect_lempertz,
         "bruun_rasmussen": collect_bruun_rasmussen,
+        "liveauctioneers": collect_liveauctioneers,
+        "invaluable": collect_invaluable,
+        "christies": collect_christies,
+        "heritage": collect_heritage,
     }
     if source not in collectors:
         raise MarketSourceError(f"Unbekannte Marktquelle: {source}")
@@ -487,6 +519,204 @@ def collect_lempertz(
         if index + 1 < len(cards):
             time.sleep(0.6)
     return results
+
+
+def collect_liveauctioneers(
+    session: requests.Session,
+    query: str,
+    *,
+    limit: int,
+    page: int,
+) -> list[dict[str, Any]]:
+    response = _get(
+        session,
+        f"https://www.liveauctioneers.com/search/{_slug(query)}",
+        params={"page": page},
+    )
+    return _collect_link_cards(
+        response.text,
+        source="liveauctioneers",
+        base_url="https://www.liveauctioneers.com",
+        link_selector='a[href*="/item/"], a[href*="/price-result/"]',
+        limit=limit,
+    )
+
+
+def collect_invaluable(
+    session: requests.Session,
+    query: str,
+    *,
+    limit: int,
+    page: int,
+) -> list[dict[str, Any]]:
+    response = _get(
+        session,
+        "https://www.invaluable.com/search",
+        params={"keyword": query, "page": page},
+    )
+    return _collect_link_cards(
+        response.text,
+        source="invaluable",
+        base_url="https://www.invaluable.com",
+        link_selector='a[href*="/auction-lot/"]',
+        limit=limit,
+    )
+
+
+def collect_christies(
+    session: requests.Session,
+    query: str,
+    *,
+    limit: int,
+    page: int,
+) -> list[dict[str, Any]]:
+    response = _get(
+        session,
+        "https://www.christies.com/en/results",
+        params={"keyword": query, "page": page},
+    )
+    return _collect_link_cards(
+        response.text,
+        source="christies",
+        base_url="https://www.christies.com",
+        link_selector='a[href*="/lot/lot-"]',
+        limit=limit,
+    )
+
+
+def collect_heritage(
+    session: requests.Session,
+    query: str,
+    *,
+    limit: int,
+    page: int,
+) -> list[dict[str, Any]]:
+    response = _get(
+        session,
+        "https://www.ha.com/c/search-results.zx",
+        params={"Ntt": query, "page": page},
+    )
+    return _collect_link_cards(
+        response.text,
+        source="heritage",
+        base_url="https://www.ha.com",
+        link_selector='a[href*="/itm/"]',
+        limit=limit,
+    )
+
+
+def _collect_link_cards(
+    document: str,
+    *,
+    source: str,
+    base_url: str,
+    link_selector: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    soup = BeautifulSoup(document, "html.parser")
+    results: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for link in soup.select(link_selector):
+        if not isinstance(link, Tag):
+            continue
+        item_url = urljoin(base_url, str(link.get("href") or ""))
+        if not item_url or item_url in seen_urls:
+            continue
+        seen_urls.add(item_url)
+        card = _listing_card(link)
+        title = _listing_title(link, card)
+        if not title:
+            continue
+        card_text = _clean_text(card.get_text(" ", strip=True))
+        price_status, price_basis, price_raw, price, currency = _price_details(card_text)
+        results.append(
+            _result(
+                source=source,
+                source_item_id=_id_from_url(item_url),
+                title=title,
+                url=item_url,
+                image_url=_listing_image(card, base_url),
+                price_status=price_status,
+                price_value=price,
+                price_raw=price_raw,
+                currency=currency,
+                price_basis=price_basis,
+                estimate_raw=price_raw if price_status == "estimate" else "",
+                sale_date="",
+                attribution=_attribution(title),
+                raw_result={"price_text": price_raw},
+            )
+        )
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _listing_card(link: Tag) -> Tag:
+    for parent in link.parents:
+        if not isinstance(parent, Tag):
+            continue
+        class_names = " ".join(parent.get("class") or []).lower()
+        if parent.name in {"article", "li"} or any(
+            marker in class_names
+            for marker in ("card", "item", "lot", "result", "listing", "product")
+        ):
+            return parent
+    return link
+
+
+def _listing_title(link: Tag, card: Tag) -> str:
+    for value in (
+        link.get("aria-label"),
+        link.get("title"),
+        link.get_text(" ", strip=True),
+    ):
+        title = _clean_text(str(value or ""))
+        if len(title) >= 4 and title.lower() not in {"view lot", "view item", "details"}:
+            return title
+    heading = card.select_one("h1, h2, h3, h4, [data-testid*='title']")
+    return _clean_text(heading.get_text(" ", strip=True)) if heading else ""
+
+
+def _listing_image(card: Tag, base_url: str) -> str:
+    image = card.select_one("img[src], img[data-src], img[data-original]")
+    if not image:
+        return ""
+    raw_url = str(
+        image.get("data-src") or image.get("data-original") or image.get("src") or ""
+    )
+    return urljoin(base_url, raw_url)
+
+
+def _price_details(
+    text: str,
+) -> tuple[str, str, str, Decimal | None, str]:
+    labels = (
+        (
+            "sold",
+            "realised",
+            ("price realized", "price realised", "hammer price", "sold for", "sold:"),
+        ),
+        ("estimate", "estimate", ("estimate", "est:")),
+        ("current_bid", "current_bid", ("current bid", "starting bid", "bid:")),
+        ("ask", "reserve", ("reserve price", "buy now")),
+    )
+    lowered = text.lower()
+    for status, basis, markers in labels:
+        for marker in markers:
+            offset = lowered.find(marker)
+            if offset < 0:
+                continue
+            fragment = _clean_text(text[offset : offset + 120])
+            price, currency = parse_money(fragment)
+            if price is not None:
+                return status, basis, fragment, price, currency
+    return "unknown", "unknown", "", None, ""
+
+
+def _slug(value: str) -> str:
+    normalized = _normalize(value)
+    return re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
 
 
 def parse_money(value: str) -> tuple[Decimal | None, str]:

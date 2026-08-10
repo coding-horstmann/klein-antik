@@ -14,7 +14,12 @@ from .catalog import EXPECTED_QUERY_COUNT, category_options, load_queries
 from .config import env_int
 from .db import connection, init_schema
 from .ebay_active import importer_ready
-from .market_sources import SOURCE_LABELS, sources_for_category
+from .market_sources import (
+    EXTERNAL_PILOT_QUERY_IDS,
+    EXTERNAL_PILOT_SOURCES,
+    SOURCE_LABELS,
+    sources_for_category,
+)
 from .price_filters import format_price_filter, parse_price_filter
 
 
@@ -97,6 +102,7 @@ RUN_LABELS = {
 RUN_KIND_LABELS = {
     "refresh": "Aktualisierung",
     "backfill": "Archiv-Backfill",
+    "source_pilot": "Neue Quellen - Pilot",
 }
 
 
@@ -1005,6 +1011,84 @@ def create_app() -> Flask:
         if not row:
             return jsonify({"error": "Suchbegriff nicht gefunden."}), 404
         return jsonify({"ok": True, "updated_at": row["updated_at"].isoformat()})
+
+    @app.post("/api/runs/source-pilot")
+    @json_endpoint
+    def start_source_pilot() -> Any:
+        with connection() as conn:
+            worker = conn.execute(
+                """
+                SELECT last_seen_at > now() - interval '90 seconds' AS online
+                FROM worker_status
+                WHERE name = 'market-importer'
+                """
+            ).fetchone()
+            if not worker or not worker["online"]:
+                return jsonify({"error": "Der Marktpreis-Importer ist nicht erreichbar."}), 409
+
+            active = conn.execute(
+                """
+                SELECT id
+                FROM market_runs
+                WHERE status IN ('queued', 'running', 'cancel_requested')
+                LIMIT 1
+                """
+            ).fetchone()
+            if active:
+                return jsonify({"error": f"Lauf {active['id']} ist bereits aktiv."}), 409
+
+            rows = conn.execute(
+                """
+                SELECT id
+                FROM search_queries
+                WHERE enabled AND id = ANY(%s)
+                """,
+                (list(EXTERNAL_PILOT_QUERY_IDS),),
+            ).fetchall()
+            available_ids = {row["id"] for row in rows}
+            missing_ids = [
+                query_id
+                for query_id in EXTERNAL_PILOT_QUERY_IDS
+                if query_id not in available_ids
+            ]
+            if missing_ids:
+                return jsonify(
+                    {"error": f"Pilot-Suchen fehlen: {', '.join(missing_ids)}"}
+                ), 409
+
+            tasks = [
+                (query_id, source)
+                for query_id in EXTERNAL_PILOT_QUERY_IDS
+                for source in EXTERNAL_PILOT_SOURCES
+            ]
+            run = conn.execute(
+                """
+                INSERT INTO market_runs (kind, planned_tasks)
+                VALUES ('source_pilot', %s)
+                RETURNING id
+                """,
+                (len(tasks),),
+            ).fetchone()
+            for query_id, source in tasks:
+                conn.execute(
+                    """
+                    INSERT INTO market_run_tasks (
+                        run_id, query_id, source, start_page, page_count
+                    )
+                    VALUES (%s, %s, %s, 1, 1)
+                    """,
+                    (run["id"], query_id, source),
+                )
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run["id"],
+                "kind": "source_pilot",
+                "planned_queries": len(EXTERNAL_PILOT_QUERY_IDS),
+                "planned_tasks": len(tasks),
+                "pages_per_task": 1,
+            }
+        ), 201
 
     @app.post("/api/runs/start")
     @json_endpoint

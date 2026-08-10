@@ -17,6 +17,7 @@ Auktionsarchive und stellt die Ergebnisse in einem Review-Dashboard bereit.
 - Preisuebersicht je Suchbegriff und Waehrung mit Median und Preisbereich
 - nachvollziehbare Laeufe und fehlgeschlagene Quellenabfragen in Postgres
 - getrennte Aktualisierung und fortlaufender Archiv-Backfill je Quelle und Suchbegriff
+- separater Quellenpilot fuer LiveAuctioneers, Invaluable, Christie's und Heritage Auctions
 - keine SerpApi- oder eBay-API-Kosten
 
 ## Deal-Pilot: eBay DE
@@ -85,6 +86,11 @@ MARKET_BACKFILL_PAGES_PER_SOURCE=2
 Quelle. `Archiv erweitern` beginnt danach bei Seite 3 und speichert pro
 Suchbegriff und Quelle einen Cursor. Ein Backfill liest jeweils die naechsten
 zwei Seiten und wiederholt abgeschlossene Seiten nicht.
+
+`Neue Quellen testen` legt einen getrennten Pilotlauf mit sieben
+repraesentativen Suchbegriffen und je einer Seite pro neuer Quelle an. Die vier
+neuen Quellen werden erst nach der Ergebnispruefung in den regulaeren
+Aktualisierungsplan aufgenommen.
 
 ## Lokal pruefen
 

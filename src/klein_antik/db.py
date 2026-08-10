@@ -153,7 +153,7 @@ def init_schema() -> None:
                     'cancel_requested', 'cancelled', 'failed'
                 )),
                 CONSTRAINT market_runs_kind_check
-                    CHECK (kind IN ('refresh', 'backfill'))
+                    CHECK (kind IN ('refresh', 'backfill', 'source_pilot'))
             );
 
             CREATE TABLE IF NOT EXISTS market_run_tasks (
@@ -171,7 +171,8 @@ def init_schema() -> None:
                 completed_at TIMESTAMPTZ,
                 UNIQUE (run_id, query_id, source),
                 CHECK (source IN (
-                    'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen'
+                    'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
+                    'liveauctioneers', 'invaluable', 'christies', 'heritage'
                 )),
                 CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
                 CONSTRAINT market_run_tasks_start_page_check CHECK (start_page >= 1),
@@ -189,7 +190,8 @@ def init_schema() -> None:
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 PRIMARY KEY (query_id, source),
                 CHECK (source IN (
-                    'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen'
+                    'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
+                    'liveauctioneers', 'invaluable', 'christies', 'heritage'
                 )),
                 CHECK (next_page >= 1)
             );
@@ -462,19 +464,29 @@ def init_schema() -> None:
             ALTER TABLE market_run_tasks
                 ADD COLUMN IF NOT EXISTS page_count INTEGER NOT NULL DEFAULT 1;
 
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1
-                    FROM pg_constraint
-                    WHERE conname = 'market_runs_kind_check'
-                      AND conrelid = 'market_runs'::regclass
-                ) THEN
-                    ALTER TABLE market_runs
-                        ADD CONSTRAINT market_runs_kind_check
-                        CHECK (kind IN ('refresh', 'backfill'));
-                END IF;
-            END $$;
+            ALTER TABLE market_runs
+                DROP CONSTRAINT IF EXISTS market_runs_kind_check;
+            ALTER TABLE market_runs
+                ADD CONSTRAINT market_runs_kind_check
+                CHECK (kind IN ('refresh', 'backfill', 'source_pilot'));
+
+            ALTER TABLE market_run_tasks
+                DROP CONSTRAINT IF EXISTS market_run_tasks_source_check;
+            ALTER TABLE market_run_tasks
+                ADD CONSTRAINT market_run_tasks_source_check
+                CHECK (source IN (
+                    'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
+                    'liveauctioneers', 'invaluable', 'christies', 'heritage'
+                ));
+
+            ALTER TABLE market_backfill_cursors
+                DROP CONSTRAINT IF EXISTS market_backfill_cursors_source_check;
+            ALTER TABLE market_backfill_cursors
+                ADD CONSTRAINT market_backfill_cursors_source_check
+                CHECK (source IN (
+                    'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
+                    'liveauctioneers', 'invaluable', 'christies', 'heritage'
+                ));
 
             DO $$
             BEGIN

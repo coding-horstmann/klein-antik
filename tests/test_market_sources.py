@@ -52,7 +52,53 @@ class MarketSourceTests(unittest.TestCase):
         self.assertEqual(parse_money("EUR 1.234,50"), (Decimal("1234.50"), "EUR"))
         self.assertEqual(parse_money("DKK 14,000"), (Decimal("14000"), "DKK"))
         self.assertEqual(parse_money("SEK 1 200"), (Decimal("1200"), "SEK"))
+        self.assertEqual(parse_money("EUR 1,250"), (Decimal("1250"), "EUR"))
         self.assertEqual(parse_money("Estimate only"), (None, ""))
+
+    def test_external_source_collectors_keep_listing_and_price_details(self) -> None:
+        fixtures = {
+            "liveauctioneers": (
+                '<article><a href="/item/101-georg-jensen-pendant">Georg Jensen silver pendant</a>'
+                '<img src="/images/101.jpg"><span>Price Realized: USD 1,250</span></article>',
+                "sold",
+                Decimal("1250"),
+                "USD",
+            ),
+            "invaluable": (
+                '<article><a href="/auction-lot/georg-jensen-ring-7-c-a123">Georg Jensen silver ring</a>'
+                '<img data-src="/images/102.jpg"><span>Estimate: EUR 700</span></article>',
+                "estimate",
+                Decimal("700"),
+                "EUR",
+            ),
+            "christies": (
+                '<article><a href="/en/lot/lot-555">Georg Jensen silver bowl</a>'
+                '<span>Hammer Price: GBP 2,000</span></article>',
+                "sold",
+                Decimal("2000"),
+                "GBP",
+            ),
+            "heritage": (
+                '<article><a href="/itm/silver/georg-jensen-brooch/12345.s">Georg Jensen brooch</a>'
+                '<span>Sold for: USD 900</span></article>',
+                "sold",
+                Decimal("900"),
+                "USD",
+            ),
+        }
+        for source, (page, status, amount, currency) in fixtures.items():
+            with self.subTest(source=source):
+                results = collect(
+                    source,
+                    "Georg Jensen Silber",
+                    session=FakeSession([page]),
+                    limit=30,
+                )
+                self.assertEqual(len(results), 1)
+                self.assertEqual(results[0]["price_status"], status)
+                self.assertEqual(results[0]["price_value"], amount)
+                self.assertEqual(results[0]["currency"], currency)
+                self.assertTrue(results[0]["url"].startswith("https://"))
 
     def test_relevance_rejects_auction_search_noise(self) -> None:
         furniture = {
