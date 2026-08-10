@@ -17,6 +17,7 @@ Auktionsarchive und stellt die Ergebnisse in einem Review-Dashboard bereit.
 - Bewertung, Verwendungsart, Tags und Notizen je Objekt
 - Bewertung und Notiz je Suchbegriff
 - nachvollziehbare Laeufe und fehlgeschlagene Quellenabfragen in Postgres
+- getrennte Aktualisierung und fortlaufender Archiv-Backfill je Quelle und Suchbegriff
 - keine SerpApi- oder eBay-API-Kosten
 
 ## Deal-Pilot: eBay DE
@@ -76,8 +77,15 @@ APP_MODE=dashboard|worker
 DASHBOARD_USER=niklas
 DASHBOARD_PASSWORD=<geheim>
 MARKET_REQUEST_INTERVAL_SECONDS=2
-MARKET_RESULTS_PER_SOURCE=30
+MARKET_RESULTS_PER_SOURCE=96
+MARKET_PAGES_PER_SOURCE=2
+MARKET_BACKFILL_PAGES_PER_SOURCE=2
 ```
+
+`Marktdaten aktualisieren` liest immer die ersten zwei Seiten einer freigegebenen
+Quelle. `Archiv erweitern` beginnt danach bei Seite 3 und speichert pro
+Suchbegriff und Quelle einen Cursor. Ein Backfill liest jeweils die naechsten
+zwei Seiten und wiederholt abgeschlossene Seiten nicht.
 
 ## Lokal pruefen
 

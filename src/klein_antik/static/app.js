@@ -25,24 +25,35 @@ async function postJSON(url, body = {}) {
 }
 
 function bindRunControls() {
-  const start = document.getElementById("start-run");
-  if (start) {
-    start.addEventListener("click", async () => {
-      const confirmed = window.confirm(
-        "Marktdaten fuer alle 110 Suchbegriffe aktualisieren? Es werden nur die aktuell freigegebenen Auktionsquellen abgefragt."
-      );
-      if (!confirmed) return;
-      start.disabled = true;
+  function bindStart(buttonId, endpoint, confirmation, label) {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    button.addEventListener("click", async () => {
+      if (!window.confirm(confirmation)) return;
+      button.disabled = true;
       try {
-        const result = await postJSON("/api/runs/start");
-        showToast(`Marktdatenlauf #${result.run_id} wurde eingereiht.`);
+        const result = await postJSON(endpoint);
+        showToast(`${label} #${result.run_id} wurde eingereiht.`);
         window.setTimeout(() => window.location.reload(), 900);
       } catch (error) {
         showToast(error.message, true);
-        start.disabled = false;
+        button.disabled = false;
       }
     });
   }
+
+  bindStart(
+    "start-run",
+    "/api/runs/start",
+    "Marktdaten fuer alle 110 Suchbegriffe aktualisieren? Es werden nur die aktuell freigegebenen Auktionsquellen abgefragt.",
+    "Marktdatenlauf"
+  );
+  bindStart(
+    "start-backfill",
+    "/api/runs/backfill",
+    "Die jeweils naechsten zwei Archivseiten je Suchbegriff und Quelle abfragen? Bereits abgearbeitete Seiten werden nicht wiederholt.",
+    "Archiv-Backfill"
+  );
 
   document.querySelectorAll(".cancel-run").forEach((button) => {
     button.addEventListener("click", async () => {

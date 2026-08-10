@@ -94,6 +94,10 @@ RUN_LABELS = {
     "cancelled": "Abgebrochen",
     "failed": "Fehlgeschlagen",
 }
+RUN_KIND_LABELS = {
+    "refresh": "Aktualisierung",
+    "backfill": "Archiv-Backfill",
+}
 
 
 def init_with_retry() -> None:
@@ -151,6 +155,7 @@ def create_app() -> Flask:
             "price_basis_labels": PRICE_BASIS_LABELS,
             "source_labels": SOURCE_LABELS,
             "run_labels": RUN_LABELS,
+            "run_kind_labels": RUN_KIND_LABELS,
             "categories": category_options(),
             "format_money": format_money,
             "format_time": format_time,
@@ -415,6 +420,10 @@ def create_app() -> Flask:
                 }
             ),
             market_pages=max(1, min(5, env_int("MARKET_PAGES_PER_SOURCE", 2))),
+            backfill_pages=max(
+                1,
+                min(5, env_int("MARKET_BACKFILL_PAGES_PER_SOURCE", 2)),
+            ),
         )
 
     @app.get("/deals")
@@ -1016,24 +1025,149 @@ def create_app() -> Flask:
                 for query_row in query_rows
                 for source in sources_for_category(query_row["category"])
             ]
+            refresh_pages = max(
+                1,
+                min(5, env_int("MARKET_PAGES_PER_SOURCE", 2)),
+            )
             run = conn.execute(
-                "INSERT INTO market_runs (planned_tasks) VALUES (%s) RETURNING id",
+                """
+                INSERT INTO market_runs (kind, planned_tasks)
+                VALUES ('refresh', %s)
+                RETURNING id
+                """,
                 (len(tasks),),
             ).fetchone()
             for query_id, source in tasks:
                 conn.execute(
                     """
-                    INSERT INTO market_run_tasks (run_id, query_id, source)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO market_run_tasks (
+                        run_id, query_id, source, start_page, page_count
+                    )
+                    VALUES (%s, %s, %s, 1, %s)
                     """,
-                    (run["id"], query_id, source),
+                    (run["id"], query_id, source, refresh_pages),
                 )
         return jsonify(
             {
                 "ok": True,
                 "run_id": run["id"],
+                "kind": "refresh",
                 "planned_queries": len(query_rows),
                 "planned_tasks": len(tasks),
+                "pages_per_task": refresh_pages,
+            }
+        ), 201
+
+    @app.post("/api/runs/backfill")
+    @json_endpoint
+    def start_backfill_run() -> Any:
+        with connection() as conn:
+            worker = conn.execute(
+                """
+                SELECT last_seen_at > now() - interval '90 seconds' AS online
+                FROM worker_status
+                WHERE name = 'market-importer'
+                """
+            ).fetchone()
+            if not worker or not worker["online"]:
+                return jsonify({"error": "Der Marktpreis-Importer ist nicht erreichbar."}), 409
+
+            active = conn.execute(
+                """
+                SELECT id
+                FROM market_runs
+                WHERE status IN ('queued', 'running', 'cancel_requested')
+                LIMIT 1
+                """
+            ).fetchone()
+            if active:
+                return jsonify({"error": f"Lauf {active['id']} ist bereits aktiv."}), 409
+
+            query_rows = conn.execute(
+                """
+                SELECT id, category
+                FROM search_queries
+                WHERE enabled
+                ORDER BY position
+                """
+            ).fetchall()
+            if len(query_rows) != EXPECTED_QUERY_COUNT:
+                return jsonify(
+                    {
+                        "error": (
+                            f"Start verweigert: erwartet werden {EXPECTED_QUERY_COUNT}, "
+                            f"gefunden wurden {len(query_rows)} aktive Suchen."
+                        )
+                    }
+                ), 409
+
+            refresh_pages = max(
+                1,
+                min(5, env_int("MARKET_PAGES_PER_SOURCE", 2)),
+            )
+            backfill_pages = max(
+                1,
+                min(5, env_int("MARKET_BACKFILL_PAGES_PER_SOURCE", 2)),
+            )
+            source_tasks = [
+                (query_row["id"], source)
+                for query_row in query_rows
+                for source in sources_for_category(query_row["category"])
+            ]
+            for query_id, source in source_tasks:
+                conn.execute(
+                    """
+                    INSERT INTO market_backfill_cursors (query_id, source, next_page)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (query_id, source) DO NOTHING
+                    """,
+                    (query_id, source, refresh_pages + 1),
+                )
+            cursor_rows = conn.execute(
+                """
+                SELECT query_id, source, next_page
+                FROM market_backfill_cursors
+                WHERE NOT exhausted
+                """
+            ).fetchall()
+            cursors = {
+                (row["query_id"], row["source"]): int(row["next_page"])
+                for row in cursor_rows
+            }
+            tasks = [
+                (query_id, source, cursors[(query_id, source)], backfill_pages)
+                for query_id, source in source_tasks
+                if (query_id, source) in cursors
+            ]
+            if not tasks:
+                return jsonify({"error": "Alle freigegebenen Archive sind ausgeschöpft."}), 409
+
+            run = conn.execute(
+                """
+                INSERT INTO market_runs (kind, planned_tasks)
+                VALUES ('backfill', %s)
+                RETURNING id
+                """,
+                (len(tasks),),
+            ).fetchone()
+            for query_id, source, start_page, page_count in tasks:
+                conn.execute(
+                    """
+                    INSERT INTO market_run_tasks (
+                        run_id, query_id, source, start_page, page_count
+                    )
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (run["id"], query_id, source, start_page, page_count),
+                )
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run["id"],
+                "kind": "backfill",
+                "planned_queries": len(query_rows),
+                "planned_tasks": len(tasks),
+                "pages_per_task": backfill_pages,
             }
         ), 201
 

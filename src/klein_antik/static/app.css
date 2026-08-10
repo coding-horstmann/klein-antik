@@ -148,6 +148,13 @@ a {
   color: var(--muted);
 }
 
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .view-switch {
   display: flex;
   overflow: hidden;
@@ -967,6 +974,18 @@ textarea:hover {
   gap: 12px;
 }
 
+.run-state {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.run-kind {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .run-topline > span {
   color: var(--muted);
   font-size: 12px;
@@ -1224,6 +1243,10 @@ textarea:hover {
   .view-switch {
     width: 100%;
     margin-top: 14px;
+  }
+
+  .page-actions {
+    display: block;
   }
 
   .view-switch a {

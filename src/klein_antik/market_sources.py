@@ -5,6 +5,7 @@ import json
 import re
 import time
 import unicodedata
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 from urllib.parse import urljoin
@@ -55,6 +56,15 @@ class MarketSourceError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class CollectedBatch:
+    """One consecutive source-page batch and its pagination state."""
+
+    results: list[dict[str, Any]]
+    pages_fetched: int
+    exhausted: bool
+
+
 def sources_for_category(category: str) -> tuple[str, ...]:
     return CATEGORY_SOURCES.get(category, ("auctionet",))
 
@@ -80,6 +90,27 @@ def collect(
     page_interval: float = 0.0,
     session: requests.Session | None = None,
 ) -> list[dict[str, Any]]:
+    return collect_batch(
+        source,
+        query,
+        limit=limit,
+        start_page=1,
+        page_count=max_pages,
+        page_interval=page_interval,
+        session=session,
+    ).results
+
+
+def collect_batch(
+    source: str,
+    query: str,
+    *,
+    limit: int = 30,
+    start_page: int = 1,
+    page_count: int = 1,
+    page_interval: float = 0.0,
+    session: requests.Session | None = None,
+) -> CollectedBatch:
     collectors: dict[str, Callable[..., list[dict[str, Any]]]] = {
         "auctionet": collect_auctionet,
         "quittenbaum": collect_quittenbaum,
@@ -91,19 +122,33 @@ def collect(
     own_session = session is None
     active_session = session or build_session()
     try:
+        if start_page < 1:
+            raise MarketSourceError("Die erste Archivseite muss mindestens 1 sein.")
         page_size = SOURCE_PAGE_SIZES[source]
-        page_cap = min(max(1, max_pages), SOURCE_MAX_PAGES[source])
+        source_max_page = SOURCE_MAX_PAGES[source]
+        if start_page > source_max_page:
+            return CollectedBatch(results=[], pages_fetched=0, exhausted=True)
+        page_cap = min(
+            start_page + max(1, page_count) - 1,
+            source_max_page,
+        )
         raw_results: list[dict[str, Any]] = []
         search_query = search_query_for(query, source=source)
-        for page in range(1, page_cap + 1):
+        pages_fetched = 0
+        exhausted = False
+        for page in range(start_page, page_cap + 1):
             page_results = collectors[source](
                 active_session,
                 search_query,
                 limit=page_size,
                 page=page,
             )
+            pages_fetched += 1
             raw_results.extend(page_results)
-            if len(page_results) < page_size or len(raw_results) >= limit:
+            if len(page_results) < page_size or page >= source_max_page:
+                exhausted = True
+                break
+            if len(raw_results) >= limit:
                 break
             if page < page_cap and page_interval > 0:
                 time.sleep(page_interval)
@@ -117,7 +162,11 @@ def collect(
             source_item_ids.add(source_item_id)
             if relevant_to_query(query, result):
                 results.append(result)
-        return results[:limit]
+        return CollectedBatch(
+            results=results[:limit],
+            pages_fetched=pages_fetched,
+            exhausted=exhausted,
+        )
     finally:
         if own_session:
             active_session.close()

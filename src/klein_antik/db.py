@@ -135,6 +135,7 @@ def init_schema() -> None:
 
             CREATE TABLE IF NOT EXISTS market_runs (
                 id BIGSERIAL PRIMARY KEY,
+                kind TEXT NOT NULL DEFAULT 'refresh',
                 status TEXT NOT NULL DEFAULT 'queued',
                 planned_tasks INTEGER NOT NULL,
                 completed_tasks INTEGER NOT NULL DEFAULT 0,
@@ -150,7 +151,9 @@ def init_schema() -> None:
                 CHECK (status IN (
                     'queued', 'running', 'completed', 'completed_with_errors',
                     'cancel_requested', 'cancelled', 'failed'
-                ))
+                )),
+                CONSTRAINT market_runs_kind_check
+                    CHECK (kind IN ('refresh', 'backfill'))
             );
 
             CREATE TABLE IF NOT EXISTS market_run_tasks (
@@ -158,6 +161,8 @@ def init_schema() -> None:
                 run_id BIGINT NOT NULL REFERENCES market_runs(id) ON DELETE CASCADE,
                 query_id TEXT NOT NULL REFERENCES search_queries(id),
                 source TEXT NOT NULL,
+                start_page INTEGER NOT NULL DEFAULT 1,
+                page_count INTEGER NOT NULL DEFAULT 1,
                 status TEXT NOT NULL DEFAULT 'queued',
                 result_count INTEGER NOT NULL DEFAULT 0,
                 unique_count INTEGER NOT NULL DEFAULT 0,
@@ -168,11 +173,29 @@ def init_schema() -> None:
                 CHECK (source IN (
                     'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen'
                 )),
-                CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled'))
+                CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
+                CONSTRAINT market_run_tasks_start_page_check CHECK (start_page >= 1),
+                CONSTRAINT market_run_tasks_page_count_check CHECK (page_count >= 1)
             );
 
             CREATE INDEX IF NOT EXISTS market_run_tasks_run_idx
                 ON market_run_tasks (run_id, status, id);
+
+            CREATE TABLE IF NOT EXISTS market_backfill_cursors (
+                query_id TEXT NOT NULL REFERENCES search_queries(id) ON DELETE CASCADE,
+                source TEXT NOT NULL,
+                next_page INTEGER NOT NULL,
+                exhausted BOOLEAN NOT NULL DEFAULT FALSE,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (query_id, source),
+                CHECK (source IN (
+                    'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen'
+                )),
+                CHECK (next_page >= 1)
+            );
+
+            CREATE INDEX IF NOT EXISTS market_backfill_cursors_pending_idx
+                ON market_backfill_cursors (exhausted, query_id);
 
             CREATE TABLE IF NOT EXISTS market_listings (
                 id BIGSERIAL PRIMARY KEY,
@@ -429,6 +452,57 @@ def init_schema() -> None:
             ALTER TABLE worker_status
                 ADD COLUMN IF NOT EXISTS current_match_run_id BIGINT
                 REFERENCES image_match_runs(id) ON DELETE SET NULL;
+
+            ALTER TABLE market_runs
+                ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'refresh';
+
+            ALTER TABLE market_run_tasks
+                ADD COLUMN IF NOT EXISTS start_page INTEGER NOT NULL DEFAULT 1;
+
+            ALTER TABLE market_run_tasks
+                ADD COLUMN IF NOT EXISTS page_count INTEGER NOT NULL DEFAULT 1;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'market_runs_kind_check'
+                      AND conrelid = 'market_runs'::regclass
+                ) THEN
+                    ALTER TABLE market_runs
+                        ADD CONSTRAINT market_runs_kind_check
+                        CHECK (kind IN ('refresh', 'backfill'));
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'market_run_tasks_start_page_check'
+                      AND conrelid = 'market_run_tasks'::regclass
+                ) THEN
+                    ALTER TABLE market_run_tasks
+                        ADD CONSTRAINT market_run_tasks_start_page_check
+                        CHECK (start_page >= 1);
+                END IF;
+            END $$;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'market_run_tasks_page_count_check'
+                      AND conrelid = 'market_run_tasks'::regclass
+                ) THEN
+                    ALTER TABLE market_run_tasks
+                        ADD CONSTRAINT market_run_tasks_page_count_check
+                        CHECK (page_count >= 1);
+                END IF;
+            END $$;
             """
         )
         seed_queries(conn)

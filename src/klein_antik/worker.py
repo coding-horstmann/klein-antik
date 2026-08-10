@@ -10,7 +10,7 @@ from psycopg.types.json import Jsonb
 
 from .config import env_float, env_int
 from .db import connection, init_schema
-from .market_sources import SOURCE_LABELS, build_session, collect
+from .market_sources import SOURCE_LABELS, CollectedBatch, build_session, collect_batch
 
 
 logging.basicConfig(
@@ -57,7 +57,7 @@ def claim_run() -> dict[str, Any] | None:
     with connection() as conn:
         row = conn.execute(
             """
-            SELECT id, planned_tasks
+            SELECT id, kind, planned_tasks
             FROM market_runs
             WHERE status IN ('queued', 'running')
             ORDER BY id
@@ -102,7 +102,7 @@ def claim_run() -> dict[str, Any] | None:
 def next_task(run_id: int) -> dict[str, Any] | None:
     with connection() as conn:
         run = conn.execute(
-            "SELECT status FROM market_runs WHERE id = %s FOR UPDATE",
+            "SELECT status, kind FROM market_runs WHERE id = %s FOR UPDATE",
             (run_id,),
         ).fetchone()
         if not run:
@@ -132,10 +132,14 @@ def next_task(run_id: int) -> dict[str, Any] | None:
                 task.id,
                 task.query_id,
                 task.source,
+                task.start_page,
+                task.page_count,
                 q.query_text,
-                q.category
+                q.category,
+                run.kind AS run_kind
             FROM market_run_tasks task
             JOIN search_queries q ON q.id = task.query_id
+            JOIN market_runs run ON run.id = task.run_id
             WHERE task.run_id = %s AND task.status = 'queued'
             ORDER BY q.position, task.id
             FOR UPDATE OF task SKIP LOCKED
@@ -159,8 +163,9 @@ def next_task(run_id: int) -> dict[str, Any] | None:
 def save_results(
     run_id: int,
     task: dict[str, Any],
-    results: list[dict[str, Any]],
+    batch: CollectedBatch,
 ) -> None:
+    results = batch.results
     unique_ids: set[str] = set()
     with connection() as conn:
         for rank, item in enumerate(results, start=1):
@@ -241,6 +246,25 @@ def save_results(
             """,
             (len(results), len(unique_ids), task["id"]),
         )
+        if task["run_kind"] == "backfill":
+            conn.execute(
+                """
+                INSERT INTO market_backfill_cursors (
+                    query_id, source, next_page, exhausted, updated_at
+                )
+                VALUES (%s, %s, %s, %s, now())
+                ON CONFLICT (query_id, source) DO UPDATE SET
+                    next_page = EXCLUDED.next_page,
+                    exhausted = EXCLUDED.exhausted,
+                    updated_at = now()
+                """,
+                (
+                    task["query_id"],
+                    task["source"],
+                    int(task["start_page"]) + batch.pages_fetched,
+                    batch.exhausted,
+                ),
+            )
         refresh_run_stats(conn, run_id)
 
 
@@ -333,7 +357,6 @@ def process_run(
     run: dict[str, Any],
     interval: float,
     result_limit: int,
-    pages_per_source: int,
 ) -> None:
     run_id = int(run["id"])
     LOG.info(
@@ -352,23 +375,30 @@ def process_run(
             heartbeat(
                 "running",
                 current_market_run_id=run_id,
-                message=f"{source_label}: {task['query_text']}",
+                message=(
+                    f"{source_label} S.{task['start_page']}-"
+                    f"{int(task['start_page']) + int(task['page_count']) - 1}: "
+                    f"{task['query_text']}"
+                ),
             )
             try:
-                results = collect(
+                batch = collect_batch(
                     task["source"],
                     task["query_text"],
                     limit=result_limit,
-                    max_pages=pages_per_source,
+                    start_page=int(task["start_page"]),
+                    page_count=int(task["page_count"]),
                     page_interval=interval,
                     session=session,
                 )
-                save_results(run_id, task, results)
+                save_results(run_id, task, batch)
                 LOG.info(
-                    "%s abgeschlossen: %s (%s Treffer)",
+                    "%s S.%s-%s abgeschlossen: %s (%s Treffer)",
                     source_label,
+                    task["start_page"],
+                    int(task["start_page"]) + int(task["page_count"]) - 1,
                     task["query_text"],
-                    len(results),
+                    len(batch.results),
                 )
             except Exception as exc:  # one source failure must not stop the complete run
                 error = f"{type(exc).__name__}: {exc}"
@@ -396,11 +426,10 @@ def main() -> None:
     poll_seconds = max(2, env_int("WORKER_POLL_SECONDS", 5))
     interval = max(1.0, env_float("MARKET_REQUEST_INTERVAL_SECONDS", 2.0))
     result_limit = max(5, min(96, env_int("MARKET_RESULTS_PER_SOURCE", 96)))
-    pages_per_source = max(1, min(5, env_int("MARKET_PAGES_PER_SOURCE", 2)))
     while not STOP:
         run = claim_run()
         if run:
-            process_run(run, interval, result_limit, pages_per_source)
+            process_run(run, interval, result_limit)
             continue
         heartbeat("idle", message="Bereit fuer Marktpreislauf")
         time.sleep(poll_seconds)

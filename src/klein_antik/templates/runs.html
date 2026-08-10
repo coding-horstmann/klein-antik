@@ -6,15 +6,26 @@
     <h1>Datenlaeufe</h1>
     <p>Oeffentliche Auktionsarchive und Haendlerergebnisse</p>
   </div>
-  <button
-    class="button primary"
-    id="start-run"
-    type="button"
-    {% if not worker or not worker.online %}disabled{% endif %}
-  >
-    <i data-lucide="play" aria-hidden="true"></i>
-    Marktdaten aktualisieren
-  </button>
+  <div class="page-actions">
+    <button
+      class="button secondary"
+      id="start-backfill"
+      type="button"
+      {% if not worker or not worker.online %}disabled{% endif %}
+    >
+      <i data-lucide="chevrons-right" aria-hidden="true"></i>
+      Archiv erweitern
+    </button>
+    <button
+      class="button primary"
+      id="start-run"
+      type="button"
+      {% if not worker or not worker.online %}disabled{% endif %}
+    >
+      <i data-lucide="play" aria-hidden="true"></i>
+      Marktdaten aktualisieren
+    </button>
+  </div>
 </div>
 
 <section class="run-readiness" aria-label="Marktdaten-Importer Status">
@@ -35,6 +46,10 @@
   <div>
     <span>Archivtiefen</span>
     <strong>Bis {{ market_pages }} Seiten</strong>
+  </div>
+  <div>
+    <span>Backfill-Stapel</span>
+    <strong>{{ backfill_pages }} Seiten</strong>
   </div>
   <div>
     <span>Laufquellen</span>
@@ -60,8 +75,11 @@
         </div>
         <div class="run-progress-block">
           <div class="run-topline">
-            <strong class="status status-{{ run.status }}">{{ run_labels.get(run.status, run.status) }}</strong>
-            <span>{{ run.completed_tasks }} / {{ run.planned_tasks }} Quellenabfragen</span>
+            <div class="run-state">
+              <strong class="status status-{{ run.status }}">{{ run_labels.get(run.status, run.status) }}</strong>
+              <span class="run-kind">{{ run_kind_labels.get(run.kind, run.kind) }}</span>
+            </div>
+            <span>{{ run.completed_tasks }} / {{ run.planned_tasks }} Quellenaufgaben</span>
           </div>
           <div class="progress-track">
             <span style="width: {{ (run.completed_tasks * 100 / run.planned_tasks) if run.planned_tasks else 0 }}%"></span>

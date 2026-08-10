@@ -8,6 +8,7 @@ from decimal import Decimal
 from klein_antik.catalog import load_queries
 from klein_antik.market_sources import (
     collect,
+    collect_batch,
     parse_money,
     relevant_to_query,
     search_query_for,
@@ -235,6 +236,53 @@ class MarketSourceTests(unittest.TestCase):
 
         self.assertEqual(len(results), 52)
         self.assertEqual([call[1]["page"] for call in session.calls], [1, 2])
+
+    def test_backfill_batch_starts_at_cursor_and_marks_short_page_exhausted(self) -> None:
+        full_payload = {
+            "items": [
+                {
+                    "id": item_id,
+                    "shortTitle": f"Meissen plate {item_id}",
+                    "url": f"/en/{item_id}-meissen-plate",
+                    "amountValue": "100 SEK",
+                    "hasMetReserve": True,
+                }
+                for item_id in range(201, 249)
+            ]
+        }
+        short_payload = {
+            "items": [
+                {
+                    "id": item_id,
+                    "shortTitle": f"Meissen plate {item_id}",
+                    "url": f"/en/{item_id}-meissen-plate",
+                    "amountValue": "100 SEK",
+                    "hasMetReserve": True,
+                }
+                for item_id in range(249, 252)
+            ]
+        }
+        pages = [
+            '<div data-react-props="'
+            + html.escape(json.dumps(payload), quote=True)
+            + '"></div>'
+            for payload in (full_payload, short_payload)
+        ]
+        session = FakeSession(pages)
+
+        batch = collect_batch(
+            "auctionet",
+            "Meissen",
+            session=session,
+            limit=96,
+            start_page=3,
+            page_count=2,
+        )
+
+        self.assertEqual(len(batch.results), 51)
+        self.assertEqual(batch.pages_fetched, 2)
+        self.assertTrue(batch.exhausted)
+        self.assertEqual([call[1]["page"] for call in session.calls], [3, 4])
 
     def test_quittenbaum_preserves_hammer_price(self) -> None:
         page = """
