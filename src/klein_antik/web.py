@@ -360,8 +360,10 @@ def create_app() -> Flask:
                         COUNT(DISTINCT qm.listing_id) FILTER (
                             WHERE l.price_status = 'sold'
                         ) AS sold_count,
-                        array_remove(array_agg(DISTINCT l.source ORDER BY l.source), NULL)
-                            AS source_ids,
+                        COALESCE(
+                            array_remove(array_agg(DISTINCT l.source ORDER BY l.source), NULL),
+                            ARRAY[]::text[]
+                        ) AS source_ids,
                         COALESCE((
                             SELECT jsonb_agg(
                                 jsonb_build_object(
