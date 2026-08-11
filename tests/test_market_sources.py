@@ -494,7 +494,8 @@ class MarketSourceTests(unittest.TestCase):
         catalogue_page = """
         <table><tr>
           <td><a href="/de/catalogs/11925/item/3105/"><img src="/images/3105.jpg"></a></td>
-          <td><a href="/de/catalogs/11925/item/3105/">Meissen Tete-a-Tete B-Form</a></td>
+          <td>Meissen Tete-a-Tete B-Form 390,00 EUR 900,00 EUR</td>
+          <td><a href="/de/catalogs/11925/item/3105/">Mehr Informationen</a></td>
         </tr></table>
         """
         detail_page = """

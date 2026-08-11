@@ -373,7 +373,7 @@ def collect_mehlis(
         if not item_url:
             continue
         card = link.find_parent("tr") or _listing_card(link)
-        fallback_title = _listing_title(link, card)
+        fallback_title = _mehlis_card_title(card, _listing_title(link, card))
         fallback_image = _listing_image(card, "https://www.mehlis.eu")
         known = candidates.get(item_url)
         if not known or (fallback_title and not known[0]):
@@ -450,6 +450,16 @@ def _mehlis_title(soup: BeautifulSoup) -> str:
         if title and "katalog-nr" not in title.lower() and title.lower() != "porzellan":
             return title
     return ""
+
+
+def _mehlis_card_title(card: Tag, fallback_title: str) -> str:
+    card_text = _clean_text(card.get_text(" ", strip=True))
+    title_match = re.search(
+        r"\b(Meissen\b.*?)(?=\s+\d[\d.\s]*,\d{2}\b)",
+        card_text,
+        flags=re.IGNORECASE,
+    )
+    return _clean_text(title_match.group(1)) if title_match else fallback_title
 
 
 def _mehlis_item_id(catalog_id: str, item_url: str) -> str:
