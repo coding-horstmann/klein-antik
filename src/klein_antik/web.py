@@ -1222,6 +1222,20 @@ def create_app() -> Flask:
 
             tasks: list[tuple[str, int, int]] = []
             for source in MEISSEN_PORCELAIN_PILOT_SOURCES:
+                completed_result = conn.execute(
+                    """
+                    SELECT 1
+                    FROM market_run_tasks
+                    WHERE query_id = %s
+                      AND source = %s
+                      AND status = 'completed'
+                      AND unique_count > 0
+                    LIMIT 1
+                    """,
+                    (MEISSEN_ARCHIVE_QUERY_ID, source),
+                ).fetchone()
+                if completed_result and not force_refresh:
+                    continue
                 cursor = conn.execute(
                     """
                     SELECT next_page, exhausted

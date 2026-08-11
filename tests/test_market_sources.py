@@ -506,14 +506,16 @@ class MarketSourceTests(unittest.TestCase):
           Limit: 390,00 EUR Zuschlag: 900,00 EUR
         </body></html>
         """
+        session = FakeSession([catalogue_page, detail_page])
         results = collect(
             "mehlis",
             "Meissen",
-            session=FakeSession([catalogue_page, detail_page]),
+            session=session,
             limit=25,
         )
 
         self.assertEqual(len(results), 1)
+        self.assertEqual(session.calls[0][1], {"page": 4})
         self.assertEqual(results[0]["source_item_id"], "11925:3105")
         self.assertEqual(results[0]["price_status"], "sold")
         self.assertEqual(results[0]["price_value"], Decimal("900"))

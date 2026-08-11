@@ -21,7 +21,7 @@ USER_AGENT = (
 )
 REQUEST_TIMEOUT_SECONDS = 35
 EXTERNAL_REQUEST_TIMEOUT_SECONDS = 12
-MEHLIS_MEISSEN_CATALOG_IDS = ("11925",)
+MEHLIS_MEISSEN_ARCHIVE_PAGES = (("11925", 4),)
 
 SOURCE_PAGE_SIZES = {
     "auctionet": 48,
@@ -41,7 +41,7 @@ SOURCE_MAX_PAGES = {
     "quittenbaum": 5,
     "lempertz": 2,
     "bruun_rasmussen": 1,
-    "mehlis": len(MEHLIS_MEISSEN_CATALOG_IDS),
+    "mehlis": len(MEHLIS_MEISSEN_ARCHIVE_PAGES),
     "van_ham": 1,
     "dorotheum": 1,
     "liveauctioneers": 1,
@@ -355,13 +355,14 @@ def collect_mehlis(
     limit: int,
     page: int,
 ) -> list[dict[str, Any]]:
-    """Collect one curated Mehlis porcelain catalogue page by page."""
-    if page > len(MEHLIS_MEISSEN_CATALOG_IDS):
+    """Collect one curated Mehlis page containing Meissen result lots."""
+    if page > len(MEHLIS_MEISSEN_ARCHIVE_PAGES):
         return []
-    catalog_id = MEHLIS_MEISSEN_CATALOG_IDS[page - 1]
+    catalog_id, catalogue_page = MEHLIS_MEISSEN_ARCHIVE_PAGES[page - 1]
     response = _get(
         session,
         f"https://www.mehlis.eu/de/catalogs/{catalog_id}/9/result/",
+        params={"page": catalogue_page},
     )
     soup = BeautifulSoup(response.text, "html.parser")
     candidates: dict[str, tuple[str, str]] = {}
@@ -422,6 +423,7 @@ def collect_mehlis(
                 attribution=_attribution(title),
                 raw_result={
                     "catalog_id": catalog_id,
+                    "catalogue_page": catalogue_page,
                     "hammer": hammer_raw,
                     "estimate": estimate_raw,
                 },
