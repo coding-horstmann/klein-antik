@@ -386,7 +386,12 @@ def collect_mehlis(
         detail = _get(session, item_url)
         detail_soup = BeautifulSoup(detail.text, "html.parser")
         detail_text = _clean_text(detail_soup.get_text(" ", strip=True))
-        title = _mehlis_title(detail_soup) or fallback_title
+        detail_title = _mehlis_title(detail_soup)
+        title = (
+            fallback_title
+            if "meissen" in _normalize(fallback_title)
+            else detail_title or fallback_title
+        )
         hammer_match = re.search(
             r"Zuschlag\s*:\s*"
             r"((?:\d{1,3}(?:[.\s]\d{3})*|\d+)(?:,\d{2})?\s*(?:â‚¬|EUR))",
@@ -437,7 +442,9 @@ def collect_mehlis(
 def _mehlis_title(soup: BeautifulSoup) -> str:
     title_node = soup.select_one('meta[property="og:title"][content]')
     if title_node:
-        return _clean_text(str(title_node.get("content") or ""))
+        title = _clean_text(str(title_node.get("content") or ""))
+        if "auktionshaus mehlis" not in _normalize(title):
+            return title
     for heading in soup.select("h2, h3, h4"):
         title = _clean_text(heading.get_text(" ", strip=True))
         if title and "katalog-nr" not in title.lower() and title.lower() != "porzellan":

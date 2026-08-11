@@ -499,7 +499,7 @@ class MarketSourceTests(unittest.TestCase):
         """
         detail_page = """
         <html><head>
-          <meta property="og:title" content="Meissen Tete-a-Tete B-Form">
+          <meta property="og:title" content="Auktionshaus Mehlis - Auktionen">
           <meta property="og:image" content="https://images.example/3105.jpg">
         </head><body>
           <h3>Katalog-Nr. 3105</h3>
