@@ -105,13 +105,26 @@ def export_payload(
         copied["price_eur"] = converted
         copied["fx_rate"] = rate
         normalized.append(copied)
+    discovery_by_scope: dict[str, set[str]] = {}
+    for listing in normalized:
+        queries = listing.get("discovery_queries")
+        scopes = listing.get("discovery_scopes")
+        if not isinstance(queries, list) or not isinstance(scopes, list):
+            continue
+        for scope in scopes:
+            discovery_by_scope.setdefault(str(scope), set()).update(
+                str(query) for query in queries if str(query).strip()
+            )
     payload = {
         "run": {
             "run_id": run_id_label or "marketplace-" + "-".join(map(str, run_ids)),
             "collected_at": utc_now(),
             "sources": exported.get("sources", []),
             "source_run_ids": run_ids,
-            "discovery": [{"scope": "explicit_query", "query": "Meissen"}],
+            "discovery": [
+                {"scope": scope, "queries": sorted(queries)}
+                for scope, queries in sorted(discovery_by_scope.items())
+            ],
             "ecb_snapshot_date": snapshot_date,
             "forbidden_sources_checked": True,
         },

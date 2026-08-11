@@ -410,12 +410,16 @@ class MeissenScoutValidatorTests(unittest.TestCase):
                     "source": "dba",
                     "price_value": "120",
                     "currency": "DKK",
+                    "discovery_queries": ["Meissen"],
+                    "discovery_scopes": ["explicit_query"],
                 },
                 {
                     "listing_id": "tori:2",
                     "source": "tori",
                     "price_value": "25",
                     "currency": "EUR",
+                    "discovery_queries": ["posliini"],
+                    "discovery_scopes": ["broad_porcelain_category"],
                 },
             ],
         }
@@ -444,6 +448,13 @@ class MeissenScoutValidatorTests(unittest.TestCase):
         self.assertEqual(payload["run"]["ecb_snapshot_date"], "2026-08-11")
         self.assertEqual(payload["listings"][0]["price_eur"], "16.00")
         self.assertEqual(payload["listings"][1]["price_eur"], "25.00")
+        self.assertEqual(
+            payload["run"]["discovery"],
+            [
+                {"scope": "broad_porcelain_category", "queries": ["posliini"]},
+                {"scope": "explicit_query", "queries": ["Meissen"]},
+            ],
+        )
 
     def test_image_freezer_all_images_requires_explicit_listing_selection(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
