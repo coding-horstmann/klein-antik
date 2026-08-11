@@ -25,7 +25,7 @@ Read [pipeline.md](references/pipeline.md) and [source-policy.md](references/sou
 3. Report the actual reference count, source distribution, currencies, and price bases. Do not reuse a remembered count.
 4. Create `reference-profile.json` with `scripts/build_reference_profile.py`. Its title-only classifications are preliminary. Enrich shortlisted references further with image evidence for object type, model or form number, decor, artist or modeller, period, dimensions, piece count, condition, attribution confidence, and mark evidence.
 5. Build reference groups from genuinely comparable objects. Use sold prices only for numerical value bands. Preserve original prices and price bases.
-6. Collect or reuse a fresh frozen batch from approved non-eBay sources. Run governed collectors through Railway; do not improvise direct marketplace browser scraping.
+6. Collect or reuse a fresh frozen batch from approved non-eBay sources. Run governed collectors through Railway; do not improvise direct marketplace browser scraping. For visual diagnosis, use only the Codex in-app Browser and never use it for bulk collection.
 7. Freeze every collected listing before ranking. Preserve source, external ID, canonical URL, image URLs, original price, currency, timestamp, and raw evidence.
 8. Perform two separate reviews:
    - `zero-shot`: inspect the deal listing without opening the price corpus; identify the object and risks.

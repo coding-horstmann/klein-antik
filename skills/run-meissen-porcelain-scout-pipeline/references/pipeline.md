@@ -54,6 +54,14 @@ The profile labels only clear object-type signals. It deliberately leaves unsupp
 
 Freeze deal collection separately as `deal-listings.json`. A real deal collection must run through a reviewed Railway collector that supports the selected source and porcelain search. Do not call Klein-Antik's existing `/api/deals/runs/start` route; it is designed for eBay active listings.
 
+The first enabled collector is Auctionet only. It searches the active porcelain category for `Meissen`, freezes the result records and HTML hashes, and leaves style, reproduction, Dresden, and Saxony references in the audit batch with a risk flag. Run it through Railway:
+
+```powershell
+railway run --project 149b9ccc-711a-47c2-b75b-c5c0e609f208 --environment 4092832c-8c44-44e4-85a2-afadf3367c61 --service fbff031a-69c7-4335-b12a-55cd25cfca95 --no-local -- .\.venv\Scripts\python.exe skills/run-meissen-porcelain-scout-pipeline/scripts/collect_auctionet_deals.py --output runs/meissen-scout/<run-id>/deal-listings.json --max-pages 2 --limit 96 --run-id <run-id>
+```
+
+The collector must not be used for candidates until its frozen batch has been reviewed. It is deliberately independent from the existing furniture collectors.
+
 ## Reference Profile
 
 Classify references into structured fields before price comparison:

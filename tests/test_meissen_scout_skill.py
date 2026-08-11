@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import importlib.util
 import json
 import tempfile
@@ -18,6 +19,13 @@ VALIDATOR_PATH = (
     / "scripts"
     / "validate_scout_bundle.py"
 )
+COLLECTOR_PATH = (
+    ROOT
+    / "skills"
+    / "run-meissen-porcelain-scout-pipeline"
+    / "scripts"
+    / "collect_auctionet_deals.py"
+)
 
 
 def load_validator() -> ModuleType:
@@ -26,6 +34,17 @@ def load_validator() -> ModuleType:
     )
     if spec is None or spec.loader is None:
         raise RuntimeError("Cannot load Meissen scout validator")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_collector() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "collect_meissen_auctionet_deals", COLLECTOR_PATH
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Cannot load Meissen Auctionet collector")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -46,6 +65,100 @@ class MeissenScoutValidatorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.validator = load_validator()
+        cls.collector = load_collector()
+
+    def test_auctionet_collector_preserves_active_price_images_and_risks(self) -> None:
+        payload = {
+            "items": [
+                {
+                    "id": 501,
+                    "shortTitle": "Meissen porcelain figurine",
+                    "url": "/en/501-meissen-figurine",
+                    "mainImageUrl": "https://images.example.test/501-main.jpg",
+                    "imageUrls": [
+                        "https://images.example.test/501-main.jpg",
+                        "https://images.example.test/501-detail.jpg",
+                    ],
+                    "amountValue": "176 EUR",
+                    "currency": "GBP",
+                    "auctionEndTime": "1 day",
+                    "auctionEndsAtTitle": "12 Aug 2026 18:00",
+                },
+                {
+                    "id": 502,
+                    "shortTitle": "Meissen-style porcelain stand",
+                    "url": "/en/502-style-stand",
+                    "mainImageUrl": "https://images.example.test/502.jpg",
+                    "amountValue": "60 EUR",
+                    "currency": "EUR",
+                    "auctionEndTime": "2 days",
+                },
+            ]
+        }
+        markup = '<div data-react-props="' + html.escape(json.dumps(payload), quote=True) + '"></div>'
+
+        class Response:
+            text = markup
+            content = markup.encode("utf-8")
+
+            def raise_for_status(self) -> None:
+                return None
+
+        class Session:
+            def get(self, *args: object, **kwargs: object) -> Response:
+                return Response()
+
+        listings, pages = self.collector.collect_active_listings(
+            Session(),
+            query="Meissen",
+            max_pages=1,
+            limit=48,
+            collected_at="2026-08-11T12:00:00Z",
+        )
+
+        self.assertEqual(len(listings), 2)
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(listings[0]["price_eur"], "176.00")
+        self.assertEqual(listings[0]["source_currency_label"], "GBP")
+        self.assertEqual(len(listings[0]["image_urls"]), 2)
+        self.assertEqual(listings[1]["attribution_status"], "risk")
+        self.assertEqual(listings[1]["risks"], ["meissen_style"])
+        self.assertEqual(
+            self.collector.title_risks("Meissen teapot, 3rd quality"),
+            ["quality_or_seconds"],
+        )
+
+    def test_auctionet_collector_uses_ecb_rate_for_non_eur_listing(self) -> None:
+        markup = '<div data-react-props="' + html.escape(json.dumps({"items": [{"id": 88, "shortTitle": "Meissen vase", "url": "/en/88", "mainImageUrl": "https://images.example.test/88.jpg", "amountValue": "1,000 SEK", "currency": "SEK"}]}), quote=True) + '"></div>'
+        rates_xml = b'<?xml version="1.0"?><Envelope><Cube time="2026-08-10"><Cube currency="SEK" rate="11.0000"/></Cube></Envelope>'
+
+        class Response:
+            def __init__(self, text: str, content: bytes) -> None:
+                self.text = text
+                self.content = content
+
+            def raise_for_status(self) -> None:
+                return None
+
+        class Session:
+            calls = 0
+
+            def get(self, *args: object, **kwargs: object) -> Response:
+                self.calls += 1
+                if self.calls == 1:
+                    return Response(markup, markup.encode("utf-8"))
+                return Response(rates_xml.decode("utf-8"), rates_xml)
+
+        listings, _ = self.collector.collect_active_listings(
+            Session(),
+            query="Meissen",
+            max_pages=1,
+            limit=48,
+            collected_at="2026-08-11T12:00:00Z",
+        )
+
+        self.assertEqual(listings[0]["price_eur"], "90.91")
+        self.assertEqual(listings[0]["fx_rate"], "11.0000")
 
     def make_bundle(self, directory: Path) -> tuple[Path, Path, dict[str, object]]:
         reference_path = directory / "references.json"
