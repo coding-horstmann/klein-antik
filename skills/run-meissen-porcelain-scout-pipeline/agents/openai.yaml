@@ -1,0 +1,4 @@
+interface:
+  display_name: "Meissen Porcelain Scout Pipeline"
+  short_description: "Findet unterbewertete Meissen-Angebote ohne eBay"
+  default_prompt: "Use $run-meissen-porcelain-scout-pipeline to export the current Meissen reference corpus, scan approved non-eBay sources, rank underpriced candidates, and prepare an auditable review bundle without publishing."
