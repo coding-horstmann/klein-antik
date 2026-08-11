@@ -490,6 +490,37 @@ class MarketSourceTests(unittest.TestCase):
         self.assertEqual(results[0]["image_url"], "https://images.example/52724.jpg")
         self.assertEqual(results[0]["sale_date"], "25.01.2023")
 
+    def test_mehlis_keeps_hammer_price_and_source_link(self) -> None:
+        catalogue_page = """
+        <table><tr>
+          <td><a href="/de/catalogs/11925/item/3105/"><img src="/images/3105.jpg"></a></td>
+          <td><a href="/de/catalogs/11925/item/3105/">Meissen Tete-a-Tete B-Form</a></td>
+        </tr></table>
+        """
+        detail_page = """
+        <html><head>
+          <meta property="og:title" content="Meissen Tete-a-Tete B-Form">
+          <meta property="og:image" content="https://images.example/3105.jpg">
+        </head><body>
+          <h3>Katalog-Nr. 3105</h3>
+          Limit: 390,00 EUR Zuschlag: 900,00 EUR
+        </body></html>
+        """
+        results = collect(
+            "mehlis",
+            "Meissen",
+            session=FakeSession([catalogue_page, detail_page]),
+            limit=25,
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["source_item_id"], "11925:3105")
+        self.assertEqual(results[0]["price_status"], "sold")
+        self.assertEqual(results[0]["price_value"], Decimal("900"))
+        self.assertEqual(results[0]["price_basis"], "hammer")
+        self.assertEqual(results[0]["image_url"], "https://images.example/3105.jpg")
+        self.assertTrue(results[0]["url"].endswith("/catalogs/11925/item/3105/"))
+
     def test_dorotheum_keeps_realised_price_and_source_link(self) -> None:
         auction_page = """
         <article>

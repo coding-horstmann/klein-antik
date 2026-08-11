@@ -69,7 +69,7 @@ function bindRunControls() {
   bindStart(
     "start-meissen-porcelain-pilot",
     "/api/runs/meissen-porcelain-pilot",
-    "Van Ham mit Meissen-Porzellan testen? Die Quelle bleibt bis zur Auswertung getrennt vom Standardlauf.",
+    "Die naechsten getrennten Meissen-Quellen testen? Van Ham wird uebersprungen, weil es bereits ausgewertet wurde.",
     "Meissen-Quellenpilot"
   );
 

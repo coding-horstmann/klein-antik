@@ -7,7 +7,7 @@ Auktionsarchive und stellt die Ergebnisse in einem Review-Dashboard bereit.
 ## Aktueller Umfang
 
 - 110 Suchbegriffe in neun Kategorien
-- Auctionet, Quittenbaum, Lempertz und Bruun Rasmussen
+- Auctionet, Quittenbaum, Lempertz, Bruun Rasmussen, Van Ham und Mehlis
 - 157 kategoriegesteuerte Quellenabfragen je vollstaendigem Lauf
 - getrennte Kennzeichnung von Verkaufspreis, Angebot, aktuellem Gebot,
   Schaetzung, unverkauft und unbekannt
@@ -113,12 +113,11 @@ Start bei der naechsten noch nicht gelesenen Seite beginnt. Die zweite
 Schreibweise `Meissen mit Umlaut` wird dafuer nicht doppelt abgefragt, weil die Quelle beide
 Schreibweisen gleich behandelt.
 
-`Van Ham testen` fuehrt einen getrennten Meissen-Porzellan-Pilot mit dem
-Auktionsarchiv aus. Erst wenn Bilder, Links, Verkaufspreise und Relevanz im
-Archiv geprueft sind, wird die Quelle in den Standardlauf uebernommen.
-Dorotheum bleibt als moegliche Quelle dokumentiert, wird aber nicht automatisch
-abgerufen, weil der Importer dort derzeit eine ausdrueckliche HTTP-403-Sperre
-erhaelt.
+`Weitere Meissen-Quellen testen` fuehrt getrennte Meissen-Porzellan-Piloten mit
+oeffentlichen abgeschlossenen Archiven aus. Bereits ausgewertete Quellen werden
+uebersprungen. Dorotheum bleibt als moegliche Quelle dokumentiert, wird aber
+nicht automatisch abgerufen, weil der Importer dort derzeit eine ausdrueckliche
+HTTP-403-Sperre erhaelt.
 
 ## Lokal pruefen
 

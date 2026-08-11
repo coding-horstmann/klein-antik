@@ -172,7 +172,7 @@ def init_schema() -> None:
                 UNIQUE (run_id, query_id, source),
                 CHECK (source IN (
                     'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
-                    'van_ham', 'dorotheum', 'liveauctioneers', 'invaluable',
+                    'mehlis', 'van_ham', 'dorotheum', 'liveauctioneers', 'invaluable',
                     'christies', 'heritage'
                 )),
                 CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
@@ -192,7 +192,7 @@ def init_schema() -> None:
                 PRIMARY KEY (query_id, source),
                 CHECK (source IN (
                     'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
-                    'van_ham', 'dorotheum', 'liveauctioneers', 'invaluable',
+                    'mehlis', 'van_ham', 'dorotheum', 'liveauctioneers', 'invaluable',
                     'christies', 'heritage'
                 )),
                 CHECK (next_page >= 1)
@@ -478,7 +478,7 @@ def init_schema() -> None:
                 ADD CONSTRAINT market_run_tasks_source_check
                 CHECK (source IN (
                     'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
-                    'van_ham', 'dorotheum', 'liveauctioneers', 'invaluable',
+                    'mehlis', 'van_ham', 'dorotheum', 'liveauctioneers', 'invaluable',
                     'christies', 'heritage'
                 ));
 
@@ -488,7 +488,7 @@ def init_schema() -> None:
                 ADD CONSTRAINT market_backfill_cursors_source_check
                 CHECK (source IN (
                     'auctionet', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
-                    'van_ham', 'dorotheum', 'liveauctioneers', 'invaluable',
+                    'mehlis', 'van_ham', 'dorotheum', 'liveauctioneers', 'invaluable',
                     'christies', 'heritage'
                 ));
 
