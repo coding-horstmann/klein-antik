@@ -1373,6 +1373,16 @@ def create_app() -> Flask:
     @app.post("/api/runs/meissen-deal-source-pilot")
     @json_endpoint
     def start_meissen_deal_source_pilot() -> Any:
+        body = request.get_json(silent=True) or {}
+        requested_sources = body.get("sources", list(MEISSEN_DEAL_PILOT_SOURCES))
+        if not isinstance(requested_sources, list):
+            return jsonify({"error": "sources muss eine Liste sein."}), 400
+        sources = tuple(dict.fromkeys(str(source) for source in requested_sources))
+        invalid_sources = [
+            source for source in sources if source not in MEISSEN_DEAL_PILOT_SOURCES
+        ]
+        if not sources or invalid_sources:
+            return jsonify({"error": "Unzulaessige Pilotquelle."}), 400
         with connection() as conn:
             worker = conn.execute(
                 """
@@ -1412,9 +1422,9 @@ def create_app() -> Flask:
                 VALUES ('source_pilot', %s)
                 RETURNING id
                 """,
-                (len(MEISSEN_DEAL_PILOT_SOURCES),),
+                (len(sources),),
             ).fetchone()
-            for source in MEISSEN_DEAL_PILOT_SOURCES:
+            for source in sources:
                 conn.execute(
                     """
                     INSERT INTO market_run_tasks (
@@ -1430,8 +1440,8 @@ def create_app() -> Flask:
                 "run_id": run["id"],
                 "kind": "source_pilot",
                 "planned_queries": 1,
-                "planned_tasks": len(MEISSEN_DEAL_PILOT_SOURCES),
-                "sources": list(MEISSEN_DEAL_PILOT_SOURCES),
+                "planned_tasks": len(sources),
+                "sources": list(sources),
             }
         ), 201
 

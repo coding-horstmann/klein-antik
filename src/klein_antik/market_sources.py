@@ -24,6 +24,8 @@ EXTERNAL_REQUEST_TIMEOUT_SECONDS = 12
 SOURCE_PAGE_SIZES = {
     "auctionet": 48,
     "blocket": 48,
+    "dba": 48,
+    "tori": 48,
     "quittenbaum": 15,
     "lempertz": 10,
     "bruun_rasmussen": 30,
@@ -37,6 +39,8 @@ SOURCE_PAGE_SIZES = {
 SOURCE_MAX_PAGES = {
     "auctionet": 200,
     "blocket": 1,
+    "dba": 1,
+    "tori": 1,
     "quittenbaum": 5,
     "lempertz": 2,
     "bruun_rasmussen": 1,
@@ -51,6 +55,8 @@ SOURCE_MAX_PAGES = {
 SOURCE_LABELS = {
     "auctionet": "Auctionet",
     "blocket": "Blocket",
+    "dba": "DBA",
+    "tori": "Tori",
     "quittenbaum": "Quittenbaum",
     "lempertz": "Lempertz",
     "bruun_rasmussen": "Bruun Rasmussen",
@@ -93,7 +99,25 @@ MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS = {
     "quittenbaum": 1,
     "bruun_rasmussen": 1,
 }
-MEISSEN_DEAL_PILOT_SOURCES = ("blocket",)
+MEISSEN_DEAL_PILOT_SOURCES = ("blocket", "dba", "tori")
+
+PRIVATE_MARKETPLACE_CONFIG = {
+    "blocket": {
+        "base_url": "https://www.blocket.se",
+        "currency": "SEK",
+        "image_host": "images.blocketcdn.se",
+    },
+    "dba": {
+        "base_url": "https://www.dba.dk",
+        "currency": "DKK",
+        "image_host": "images.dbastatic.dk",
+    },
+    "tori": {
+        "base_url": "https://www.tori.fi",
+        "currency": "EUR",
+        "image_host": "img.tori.net",
+    },
+}
 MEISSEN_PORCELAIN_BACKFILL_SOURCES = ("quittenbaum",)
 MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES = 2
 DOROTHEUM_MEISSEN_AUCTION_URL = "https://www.dorotheum.com/en/a/123070/"
@@ -173,6 +197,8 @@ def collect_batch(
     collectors: dict[str, Callable[..., list[dict[str, Any]]]] = {
         "auctionet": collect_auctionet,
         "blocket": collect_blocket,
+        "dba": collect_dba,
+        "tori": collect_tori,
         "quittenbaum": collect_quittenbaum,
         "lempertz": collect_lempertz,
         "bruun_rasmussen": collect_bruun_rasmussen,
@@ -361,10 +387,51 @@ def collect_blocket(
     limit: int,
     page: int,
 ) -> list[dict[str, Any]]:
-    """Collect a bounded, active fixed-price Blocket search page for source gating."""
+    return collect_private_marketplace(
+        session, query, limit=limit, page=page, source="blocket"
+    )
+
+
+def collect_dba(
+    session: requests.Session,
+    query: str,
+    *,
+    limit: int,
+    page: int,
+) -> list[dict[str, Any]]:
+    return collect_private_marketplace(
+        session, query, limit=limit, page=page, source="dba"
+    )
+
+
+def collect_tori(
+    session: requests.Session,
+    query: str,
+    *,
+    limit: int,
+    page: int,
+) -> list[dict[str, Any]]:
+    return collect_private_marketplace(
+        session, query, limit=limit, page=page, source="tori"
+    )
+
+
+def collect_private_marketplace(
+    session: requests.Session,
+    query: str,
+    *,
+    limit: int,
+    page: int,
+    source: str,
+) -> list[dict[str, Any]]:
+    """Collect one active fixed-price marketplace page for the source gate."""
+    config = PRIVATE_MARKETPLACE_CONFIG[source]
+    base_url = str(config["base_url"])
+    currency = str(config["currency"])
+    image_host = str(config["image_host"])
     response = _get(
         session,
-        "https://www.blocket.se/recommerce/forsale/search",
+        f"{base_url}/recommerce/forsale/search",
         params={"q": query, "page": page},
     )
     soup = BeautifulSoup(response.text, "html.parser")
@@ -372,22 +439,27 @@ def collect_blocket(
     for card in soup.select("article.sf-search-ad"):
         link = card.select_one('a[href*="/recommerce/forsale/item/"]')
         title_node = card.select_one("h2")
-        image_node = card.select_one('img[src*="images.blocketcdn.se"]')
+        image_node = card.select_one(f'img[src*="{image_host}"]')
         if not isinstance(link, Tag) or title_node is None or image_node is None:
             continue
-        item_url = urljoin("https://www.blocket.se", str(link.get("href") or ""))
+        item_url = urljoin(base_url, str(link.get("href") or ""))
         id_match = re.search(r"/recommerce/forsale/item/(\d+)", item_url)
         title = _clean_text(title_node.get_text(" ", strip=True))
         image_url = _clean_text(str(image_node.get("src") or ""))
         card_text = _clean_text(card.get_text(" ", strip=True))
-        price_match = re.search(r"\b([\d.\s\u00a0]+)\s*kr\b", card_text, re.IGNORECASE)
+        price_pattern = (
+            r"\b([\d.,\s\u00a0]+)\s*(?:\u20ac|EUR)"
+            if currency == "EUR"
+            else r"\b([\d.\s\u00a0]+)\s*kr\b"
+        )
+        price_match = re.search(price_pattern, card_text, re.IGNORECASE)
         price_raw = _clean_text(price_match.group(0)) if price_match else ""
-        price, _ = parse_money(f"SEK {price_raw}") if price_raw else (None, "")
+        price, _ = parse_money(f"{currency} {price_raw}") if price_raw else (None, "")
         if not id_match or not title or not image_url:
             continue
         results.append(
             _result(
-                source="blocket",
+                source=source,
                 source_item_id=id_match.group(1),
                 title=title,
                 url=item_url,
@@ -395,7 +467,7 @@ def collect_blocket(
                 price_status="ask",
                 price_value=price,
                 price_raw=price_raw,
-                currency="SEK" if price is not None else "",
+                currency=currency if price is not None else "",
                 price_basis="reserve",
                 estimate_raw="",
                 attribution=_attribution(title),

@@ -292,6 +292,38 @@ class MarketSourceTests(unittest.TestCase):
         self.assertEqual(results[0]["raw_result"]["availability"], "active")
         self.assertEqual(session.calls[0][1], {"q": "meissen", "page": 1})
 
+    def test_dba_and_tori_pilots_keep_their_source_currency(self) -> None:
+        fixtures = {
+            "dba": (
+                "https://images.dbastatic.dk/dynamic/default/item/123456/abc",
+                "1 200 kr",
+                Decimal("1200"),
+                "DKK",
+            ),
+            "tori": (
+                "https://img.tori.net/dynamic/default/item/123456/abc",
+                "120,00 \u20ac",
+                Decimal("120.00"),
+                "EUR",
+            ),
+        }
+        for source, (image_url, price_text, amount, currency) in fixtures.items():
+            with self.subTest(source=source):
+                page = f"""
+                <article class="sf-search-ad">
+                  <a href="/recommerce/forsale/item/123456"></a>
+                  <h2>Meissen porcelain plate</h2>
+                  <img src="{image_url}">
+                  <span>{price_text}</span>
+                </article>
+                """
+                results = collect(
+                    source, "Meissen", session=FakeSession([page]), limit=48
+                )
+                self.assertEqual(len(results), 1)
+                self.assertEqual(results[0]["price_value"], amount)
+                self.assertEqual(results[0]["currency"], currency)
+
     def test_auctionet_sold_and_unsold_results(self) -> None:
         payload = {
             "items": [

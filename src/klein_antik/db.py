@@ -171,7 +171,7 @@ def init_schema() -> None:
                 completed_at TIMESTAMPTZ,
                 UNIQUE (run_id, query_id, source),
                 CHECK (source IN (
-                    'auctionet', 'blocket', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
+                    'auctionet', 'blocket', 'dba', 'tori', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
                     'mehlis', 'van_ham', 'dorotheum', 'liveauctioneers', 'invaluable',
                     'christies', 'heritage'
                 )),
@@ -191,7 +191,7 @@ def init_schema() -> None:
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 PRIMARY KEY (query_id, source),
                 CHECK (source IN (
-                    'auctionet', 'blocket', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
+                    'auctionet', 'blocket', 'dba', 'tori', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
                     'mehlis', 'van_ham', 'dorotheum', 'liveauctioneers', 'invaluable',
                     'christies', 'heritage'
                 )),
@@ -477,7 +477,7 @@ def init_schema() -> None:
             ALTER TABLE market_run_tasks
                 ADD CONSTRAINT market_run_tasks_source_check
                 CHECK (source IN (
-                    'auctionet', 'blocket', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
+                    'auctionet', 'blocket', 'dba', 'tori', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
                     'mehlis', 'van_ham', 'dorotheum', 'liveauctioneers', 'invaluable',
                     'christies', 'heritage'
                 ));
@@ -487,7 +487,7 @@ def init_schema() -> None:
             ALTER TABLE market_backfill_cursors
                 ADD CONSTRAINT market_backfill_cursors_source_check
                 CHECK (source IN (
-                    'auctionet', 'blocket', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
+                    'auctionet', 'blocket', 'dba', 'tori', 'quittenbaum', 'lempertz', 'bruun_rasmussen',
                     'mehlis', 'van_ham', 'dorotheum', 'liveauctioneers', 'invaluable',
                     'christies', 'heritage'
                 ));
