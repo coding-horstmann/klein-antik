@@ -90,6 +90,8 @@ MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS = {
     "quittenbaum": 1,
     "bruun_rasmussen": 1,
 }
+MEISSEN_PORCELAIN_BACKFILL_SOURCES = ("quittenbaum",)
+MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES = 2
 DOROTHEUM_MEISSEN_AUCTION_URL = "https://www.dorotheum.com/en/a/123070/"
 
 CATEGORY_SOURCES = {

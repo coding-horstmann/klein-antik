@@ -27,6 +27,15 @@
     </button>
     <button
       class="button secondary"
+      id="start-meissen-porcelain-backfill"
+      type="button"
+      {% if not worker or not worker.online %}disabled{% endif %}
+    >
+      <i data-lucide="book-open-check" aria-hidden="true"></i>
+      Meissen Quellen erweitern
+    </button>
+    <button
+      class="button secondary"
       id="start-source-pilot"
       type="button"
       {% if not worker or not worker.online %}disabled{% endif %}

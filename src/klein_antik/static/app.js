@@ -72,6 +72,12 @@ function bindRunControls() {
     "Die naechsten getrennten Meissen-Quellen testen? Van Ham wird uebersprungen, weil es bereits ausgewertet wurde.",
     "Meissen-Quellenpilot"
   );
+  bindStart(
+    "start-meissen-porcelain-backfill",
+    "/api/runs/meissen-porcelain-backfill",
+    "Die naechsten zwei Quittenbaum-Archivseiten fuer Meissen einlesen? Bereits erfasste Seiten werden per Cursor uebersprungen.",
+    "Meissen-Quellenarchiv"
+  );
 
   document.querySelectorAll(".cancel-run").forEach((button) => {
     button.addEventListener("click", async () => {

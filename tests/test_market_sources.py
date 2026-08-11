@@ -12,6 +12,8 @@ from klein_antik.market_sources import (
     MEISSEN_ARCHIVE_SOURCE,
     MEISSEN_ARCHIVE_START_PAGE,
     MEISSEN_ARCHIVE_TARGET_PAGE,
+    MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES,
+    MEISSEN_PORCELAIN_BACKFILL_SOURCES,
     SOURCE_MAX_PAGES,
     SOURCE_PAGE_SIZES,
     collect,
@@ -66,6 +68,11 @@ class MarketSourceTests(unittest.TestCase):
             (MEISSEN_ARCHIVE_TARGET_PAGE - MEISSEN_ARCHIVE_START_PAGE + 1)
             * SOURCE_PAGE_SIZES[MEISSEN_ARCHIVE_SOURCE],
         )
+
+    def test_meissen_quittenbaum_backfill_is_bounded(self) -> None:
+        self.assertEqual(MEISSEN_PORCELAIN_BACKFILL_SOURCES, ("quittenbaum",))
+        self.assertEqual(MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES, 2)
+        self.assertEqual(SOURCE_MAX_PAGES["quittenbaum"], 5)
 
     def test_money_formats(self) -> None:
         self.assertEqual(parse_money("EUR 1.234,50"), (Decimal("1234.50"), "EUR"))

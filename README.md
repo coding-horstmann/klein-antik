@@ -119,6 +119,10 @@ uebersprungen. Dorotheum und Mehlis bleiben als moegliche Quellen dokumentiert,
 werden aber nicht automatisch abgerufen: Dorotheum liefert HTTP 403 und Mehlis
 liefert dem Railway-Importer keine oeffentlichen Loslinks.
 
+`Meissen Quellen erweitern` liest bei Quittenbaum jeweils die naechsten zwei
+Archivseiten ein. Ein Cursor verhindert Doppelabfragen; nach Seite 5 endet der
+Lauf automatisch.
+
 ## Lokal pruefen
 
 ```powershell
