@@ -259,6 +259,89 @@ def create_app() -> Flask:
             }
         )
 
+    @app.get("/api/exports/meissen-deal-pilot")
+    def export_meissen_deal_pilot() -> Any:
+        """Export frozen active marketplace offers from specified completed pilot runs."""
+        run_ids: list[int] = []
+        for raw_run_id in request.args.getlist("run_id"):
+            try:
+                run_id = int(raw_run_id)
+            except ValueError:
+                return jsonify({"error": "run_id muss eine ganze Zahl sein."}), 400
+            if run_id > 0 and run_id not in run_ids:
+                run_ids.append(run_id)
+        if not run_ids:
+            return jsonify({"error": "Mindestens eine run_id wird benoetigt."}), 400
+
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    l.source,
+                    l.source_item_id,
+                    l.title,
+                    l.url,
+                    l.image_url,
+                    l.price_value,
+                    l.price_raw,
+                    l.currency,
+                    l.price_basis,
+                    l.attribution,
+                    l.last_seen_at,
+                    l.raw_result,
+                    array_agg(DISTINCT q.query_text ORDER BY q.query_text) AS query_texts
+                FROM market_listings AS l
+                JOIN market_listing_query_matches AS qm ON qm.listing_id = l.id
+                JOIN search_queries AS q ON q.id = qm.query_id
+                WHERE qm.last_run_id = ANY(%s)
+                  AND q.id = %s
+                  AND l.source = ANY(%s)
+                  AND l.price_status = 'ask'
+                  AND l.price_value IS NOT NULL
+                GROUP BY l.id
+                ORDER BY l.source, l.source_item_id
+                """,
+                (run_ids, MEISSEN_ARCHIVE_QUERY_ID, list(MEISSEN_DEAL_PILOT_SOURCES)),
+            ).fetchall()
+
+        listings: list[dict[str, Any]] = []
+        for row in rows:
+            record = dict(row)
+            raw_result = record.get("raw_result")
+            raw_result = raw_result if isinstance(raw_result, dict) else {}
+            source = str(record["source"])
+            external_id = str(record["source_item_id"])
+            listings.append(
+                {
+                    "listing_id": f"{source}:{external_id}",
+                    "source": source,
+                    "external_id": external_id,
+                    "title": str(record["title"] or ""),
+                    "url": str(record["url"] or ""),
+                    "image_urls": [str(record["image_url"])] if record["image_url"] else [],
+                    "price_raw": str(record["price_raw"] or ""),
+                    "price_value": str(record["price_value"]),
+                    "currency": str(record["currency"] or ""),
+                    "sale_mode": str(raw_result.get("sale_mode") or "fixed_price"),
+                    "availability": str(raw_result.get("availability") or "active"),
+                    "attribution_status": str(record["attribution"] or "stated"),
+                    "discovery_queries": list(record["query_texts"] or []),
+                    "discovery_scopes": ["explicit_query"],
+                    "collected_at": record["last_seen_at"].isoformat(),
+                }
+            )
+
+        return jsonify(
+            {
+                "schema_version": 1,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "run_ids": run_ids,
+                "record_count": len(listings),
+                "sources": sorted({str(item["source"]) for item in listings}),
+                "listings": listings,
+            }
+        )
+
     @app.get("/references")
     def references() -> Any:
         category = request.args.get("category", "").strip()

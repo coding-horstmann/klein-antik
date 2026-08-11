@@ -16,6 +16,12 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 FORBIDDEN_MARKERS = ("ebay", "serpapi")
 USER_AGENT = "KleinAntikMeissenScout/1.0 (auditable evidence freezer)"
+APPROVED_IMAGE_HOSTS = {
+    "auctionet": {"auctionet.com", "cdn.auctionet.com", "images.auctionet.com"},
+    "blocket": {"images.blocketcdn.se"},
+    "dba": {"images.dbastatic.dk"},
+    "tori": {"img.tori.net"},
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -130,12 +136,16 @@ def freeze_images(
         )
         if not all_images:
             image_urls = image_urls[:1]
-        if source != "auctionet" or not listing_id or not image_urls:
+        if source not in APPROVED_IMAGE_HOSTS or not listing_id or not image_urls:
             failures.append({"listing_id": listing_id or "unknown", "reason": "missing approved primary image"})
             continue
         for position, image_url in enumerate(image_urls, start=1):
             if not image_url.startswith("https://"):
                 failures.append({"listing_id": listing_id, "reason": "image URL was not HTTPS"})
+                continue
+            host = (urlparse(image_url).hostname or "").lower()
+            if host not in APPROVED_IMAGE_HOSTS[source]:
+                failures.append({"listing_id": listing_id, "reason": "image host was not approved"})
                 continue
             try:
                 response = session.get(image_url, headers={"User-Agent": USER_AGENT}, timeout=30)

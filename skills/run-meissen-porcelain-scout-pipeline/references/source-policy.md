@@ -16,11 +16,14 @@ Reject a batch if any source name, URL host, redirect target, command, or metada
 
 For Auctionet, the enabled pilot may combine repeatable explicit Meissen queries with a bounded broad porcelain-category slice. Broad-category hits remain unverified until a title, image, or mark provides attribution evidence.
 
-Only Auctionet is enabled for the first Meißen porcelain pilot. Every other source below remains disabled until its own Railway pilot has met the source-expansion gate.
+Auctionet remains the initial auction source. Blocket, DBA and Tori passed a bounded Railway source pilot on 2026-08-11 for explicit `Meissen` discovery: each produced active canonical offers with stable item IDs, images, prices and source currency. They are enabled only for frozen, manual-review deal batches; no source is part of a recurring scan yet.
 
 ### Enabled
 
 - Auctionet: active porcelain category with a dedicated Meißen query; frozen batch only, no publishing.
+- Blocket: active fixed-price offers; explicit `Meissen` query only.
+- DBA: active fixed-price offers; explicit `Meissen` query only.
+- Tori: active fixed-price offers; explicit `Meissen` query only.
 
 ### Pending Railway Pilots
 

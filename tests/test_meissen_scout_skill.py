@@ -33,6 +33,13 @@ IMAGE_FREEZER_PATH = (
     / "scripts"
     / "freeze_listing_images.py"
 )
+MARKETPLACE_EXPORTER_PATH = (
+    ROOT
+    / "skills"
+    / "run-meissen-porcelain-scout-pipeline"
+    / "scripts"
+    / "export_marketplace_deals.py"
+)
 ZERO_SHOT_PATH = (
     ROOT
     / "skills"
@@ -91,6 +98,17 @@ def load_image_freezer() -> ModuleType:
     )
     if spec is None or spec.loader is None:
         raise RuntimeError("Cannot load Meissen image freezer")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_marketplace_exporter() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "export_meissen_marketplace_deals", MARKETPLACE_EXPORTER_PATH
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Cannot load Meissen marketplace exporter")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -157,6 +175,7 @@ class MeissenScoutValidatorTests(unittest.TestCase):
         cls.validator = load_validator()
         cls.collector = load_collector()
         cls.image_freezer = load_image_freezer()
+        cls.marketplace_exporter = load_marketplace_exporter()
         cls.zero_shot_builder = load_zero_shot_builder()
         cls.reference_image_freezer = load_reference_image_freezer()
         cls.reference_pass_builder = load_reference_pass_builder()
@@ -357,8 +376,8 @@ class MeissenScoutValidatorTests(unittest.TestCase):
                             "listing_id": "auctionet:501",
                             "source": "auctionet",
                             "image_urls": [
-                                "https://images.example.test/501.jpg",
-                                "https://images.example.test/501-detail.jpg",
+                                "https://images.auctionet.com/501.jpg",
+                                "https://images.auctionet.com/501-detail.jpg",
                             ],
                         }
                     ],
@@ -380,6 +399,51 @@ class MeissenScoutValidatorTests(unittest.TestCase):
         self.assertEqual(manifest["run"]["failure_count"], 0)
         self.assertEqual(manifest["images"][0]["image_file"], "images/auctionet-501.jpg")
         self.assertEqual(manifest["images"][0]["sha256"], hashlib.sha256(b"image-bytes").hexdigest())
+
+    def test_marketplace_export_converts_source_currency_with_one_ecb_snapshot(self) -> None:
+        export_response = Mock()
+        export_response.json.return_value = {
+            "sources": ["dba", "tori"],
+            "listings": [
+                {
+                    "listing_id": "dba:1",
+                    "source": "dba",
+                    "price_value": "120",
+                    "currency": "DKK",
+                },
+                {
+                    "listing_id": "tori:2",
+                    "source": "tori",
+                    "price_value": "25",
+                    "currency": "EUR",
+                },
+            ],
+        }
+        export_response.raise_for_status.return_value = None
+        rate_response = Mock()
+        rate_response.content = (
+            b'<?xml version="1.0"?><Envelope><Cube time="2026-08-11">'
+            b'<Cube currency="DKK" rate="7.5000"/></Cube></Envelope>'
+        )
+        rate_response.raise_for_status.return_value = None
+
+        session = Mock()
+        session.get.side_effect = [export_response, rate_response]
+        with patch.dict(
+            "os.environ",
+            {"DASHBOARD_USER": "niklas", "DASHBOARD_PASSWORD": "secret"},
+            clear=False,
+        ):
+            payload = self.marketplace_exporter.export_payload(
+                session,
+                dashboard_url="https://dashboard.example.test",
+                run_ids=[24, 25],
+                run_id_label="test-run",
+            )
+
+        self.assertEqual(payload["run"]["ecb_snapshot_date"], "2026-08-11")
+        self.assertEqual(payload["listings"][0]["price_eur"], "16.00")
+        self.assertEqual(payload["listings"][1]["price_eur"], "25.00")
 
     def test_image_freezer_all_images_requires_explicit_listing_selection(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
