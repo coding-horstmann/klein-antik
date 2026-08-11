@@ -189,6 +189,75 @@ def create_app() -> Flask:
     def index() -> Any:
         return redirect(url_for("references"))
 
+    @app.get("/api/exports/meissen-references")
+    def export_meissen_references() -> Any:
+        """Return the sold Meissen corpus for an auditable scout run."""
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    l.source,
+                    l.source_item_id,
+                    l.title,
+                    l.url,
+                    l.image_url,
+                    l.price_value,
+                    l.price_raw,
+                    l.currency,
+                    l.price_basis,
+                    l.sale_date,
+                    l.attribution,
+                    l.first_seen_at,
+                    l.last_seen_at,
+                    array_agg(DISTINCT q.id ORDER BY q.id) AS query_ids,
+                    array_agg(DISTINCT q.query_text ORDER BY q.query_text) AS query_texts
+                FROM market_listings AS l
+                JOIN market_listing_query_matches AS qm ON qm.listing_id = l.id
+                JOIN search_queries AS q ON q.id = qm.query_id
+                WHERE q.category = 'meissen_porcelain'
+                  AND l.price_status = 'sold'
+                  AND l.price_value IS NOT NULL
+                GROUP BY l.id
+                ORDER BY l.source, l.source_item_id
+                """
+            ).fetchall()
+
+        records: list[dict[str, Any]] = []
+        source_counts: dict[str, int] = {}
+        currency_counts: dict[str, int] = {}
+        price_basis_counts: dict[str, int] = {}
+        for row in rows:
+            record = dict(row)
+            record["reference_id"] = (
+                f"{record['source']}:{record['source_item_id']}"
+            )
+            records.append(record)
+            for counts, key in (
+                (source_counts, "source"),
+                (currency_counts, "currency"),
+                (price_basis_counts, "price_basis"),
+            ):
+                value = str(record.get(key) or "unknown")
+                counts[value] = counts.get(value, 0) + 1
+
+        return jsonify(
+            {
+                "schema_version": 1,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "category": "meissen_porcelain",
+                "filters": {
+                    "price_status": "sold",
+                    "priced_only": True,
+                    "forbidden_deal_sources_excluded": True,
+                },
+                "record_count": len(records),
+                "source_counts": dict(sorted(source_counts.items())),
+                "currency_counts": dict(sorted(currency_counts.items())),
+                "price_basis_counts": dict(sorted(price_basis_counts.items())),
+                "records": records,
+            }
+        )
+
     @app.get("/references")
     def references() -> Any:
         category = request.args.get("category", "").strip()

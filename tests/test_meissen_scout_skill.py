@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -137,6 +138,36 @@ class MeissenScoutValidatorTests(unittest.TestCase):
                     reference_path,
                     deal_path,
                 )
+
+    def test_dashboard_export_requires_the_meissen_category(self) -> None:
+        response = Mock()
+        response.json.return_value = {"category": "ceramics", "records": []}
+        response.raise_for_status.return_value = None
+        with patch.dict(
+            "os.environ",
+            {"DASHBOARD_USER": "niklas", "DASHBOARD_PASSWORD": "secret"},
+            clear=False,
+        ):
+            exporter_spec = importlib.util.spec_from_file_location(
+                "export_meissen_reference_corpus",
+                ROOT
+                / "skills"
+                / "run-meissen-porcelain-scout-pipeline"
+                / "scripts"
+                / "export_reference_corpus.py",
+            )
+        if exporter_spec is None or exporter_spec.loader is None:
+            self.fail("Cannot load Meissen reference exporter")
+        exporter = importlib.util.module_from_spec(exporter_spec)
+        exporter_spec.loader.exec_module(exporter)
+        with patch.dict(
+            "os.environ",
+            {"DASHBOARD_USER": "niklas", "DASHBOARD_PASSWORD": "secret"},
+            clear=False,
+        ):
+            with patch.object(exporter.requests, "get", return_value=response):
+                with self.assertRaisesRegex(RuntimeError, "not a Meissen"):
+                    exporter.export_from_dashboard("https://dashboard.example.test")
 
 
 if __name__ == "__main__":

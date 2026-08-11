@@ -38,6 +38,12 @@ railway run --project 149b9ccc-711a-47c2-b75b-c5c0e609f208 --environment 4092832
 
 The export script executes only a `SELECT`. It includes sold `market_listings` attached to the `meissen_porcelain` category. Record the printed SHA-256 value in `review.md`.
 
+If Railway injects only an internal `DATABASE_URL` into a local `railway run` command, use the authenticated dashboard export instead. It executes the same read-only query inside the dashboard service:
+
+```powershell
+railway run --project 149b9ccc-711a-47c2-b75b-c5c0e609f208 --environment 4092832c-8c44-44e4-85a2-afadf3367c61 --service a87e4fd2-e500-424a-a83a-9957921d1eca --no-local -- python skills/run-meissen-porcelain-scout-pipeline/scripts/export_reference_corpus.py --dashboard-url https://klein-antik-dashboard-production.up.railway.app --output runs/meissen-scout/<run-id>/reference-corpus.json
+```
+
 Freeze deal collection separately as `deal-listings.json`. A real deal collection must run through a reviewed Railway collector that supports the selected source and porcelain search. Do not call Klein-Antik's existing `/api/deals/runs/start` route; it is designed for eBay active listings.
 
 ## Reference Profile

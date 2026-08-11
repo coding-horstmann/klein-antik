@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
+import requests
 from psycopg.rows import dict_row
 
 
@@ -47,6 +48,10 @@ def parse_args() -> argparse.Namespace:
         description="Export sold Meissen market references without modifying the database."
     )
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--dashboard-url",
+        help="Use the protected dashboard export when DATABASE_URL is internal-only.",
+    )
     return parser.parse_args()
 
 
@@ -103,15 +108,42 @@ def export_corpus(database_url: str) -> dict[str, Any]:
     }
 
 
+def export_from_dashboard(dashboard_url: str) -> dict[str, Any]:
+    username = os.environ.get("DASHBOARD_USER", "").strip()
+    password = os.environ.get("DASHBOARD_PASSWORD", "").strip()
+    if not username or not password:
+        raise RuntimeError(
+            "DASHBOARD_USER and DASHBOARD_PASSWORD are required for dashboard export"
+        )
+    response = requests.get(
+        f"{dashboard_url.rstrip('/')}/api/exports/meissen-references",
+        auth=(username, password),
+        timeout=90,
+    )
+    response.raise_for_status()
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError("Dashboard export did not return JSON") from exc
+    if not isinstance(payload, dict) or payload.get("category") != "meissen_porcelain":
+        raise RuntimeError("Dashboard export is not a Meissen reference corpus")
+    if not isinstance(payload.get("records"), list):
+        raise RuntimeError("Dashboard export has no records list")
+    return payload
+
+
 def main() -> int:
     args = parse_args()
-    database_url = os.environ.get("DATABASE_URL", "").strip()
-    if not database_url:
-        raise SystemExit("DATABASE_URL is required")
     if args.output.exists():
         raise SystemExit(f"Refusing to overwrite frozen export: {args.output}")
 
-    payload = export_corpus(database_url)
+    if args.dashboard_url:
+        payload = export_from_dashboard(args.dashboard_url)
+    else:
+        database_url = os.environ.get("DATABASE_URL", "").strip()
+        if not database_url:
+            raise SystemExit("DATABASE_URL is required without --dashboard-url")
+        payload = export_corpus(database_url)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     encoded = (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(
         "utf-8"
