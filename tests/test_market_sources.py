@@ -18,6 +18,7 @@ from klein_antik.market_sources import (
     SOURCE_PAGE_SIZES,
     collect,
     collect_batch,
+    enrich_private_marketplace_listing,
     _external_request_headers,
     parse_money,
     relevant_to_query,
@@ -323,6 +324,38 @@ class MarketSourceTests(unittest.TestCase):
                 self.assertEqual(len(results), 1)
                 self.assertEqual(results[0]["price_value"], amount)
                 self.assertEqual(results[0]["currency"], currency)
+
+    def test_marketplace_detail_enrichment_keeps_source_images_and_condition_risks(self) -> None:
+        markup = """
+        <html><head>
+          <meta name="description" content="Condition: damaged rim, repaired base.">
+        </head><body>
+          <img src="https://images.dbastatic.dk/dynamic/default/item/123456/abc">
+          <img src="https://images.dbastatic.dk/dynamic/default/item/123456/def">
+        </body></html>
+        """
+
+        class Response:
+            text = markup
+            content = markup.encode("utf-8")
+
+            def raise_for_status(self) -> None:
+                return None
+
+        class Session:
+            def get(self, *args: object, **kwargs: object) -> Response:
+                return Response()
+
+        detail = enrich_private_marketplace_listing(
+            Session(),
+            source="dba",
+            url="https://www.dba.dk/recommerce/forsale/item/123456",
+            title="Meissen plate",
+        )
+
+        self.assertEqual(len(detail["image_urls"]), 2)
+        self.assertEqual(detail["condition_risks"], ["damage", "repair"])
+        self.assertEqual(len(detail["html_sha256"]), 64)
 
     def test_auctionet_sold_and_unsold_results(self) -> None:
         payload = {

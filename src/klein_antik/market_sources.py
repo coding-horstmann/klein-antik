@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import hashlib
 import json
 import os
 import re
@@ -118,6 +119,13 @@ PRIVATE_MARKETPLACE_CONFIG = {
         "image_host": "img.tori.net",
     },
 }
+CONDITION_RISK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("damage", re.compile(r"\b(?:damage[ds]?|damaged|defekt|skadad|vaurio\w*)\b", re.I)),
+    ("repair", re.compile(r"\b(?:repair(?:ed)?|restored|limmad|korjattu)\b", re.I)),
+    ("chip", re.compile(r"\b(?:chip(?:ped)?|nagel|flisa\w*)\b", re.I)),
+    ("crack", re.compile(r"\b(?:crack(?:ed)?|spricka\w*|halkeama\w*)\b", re.I)),
+)
+CONDITION_NEGATIONS = re.compile(r"\b(?:no|without|none|ingen|inga|inte|ei|ikke)\s*$", re.I)
 MEISSEN_PORCELAIN_BACKFILL_SOURCES = ("quittenbaum",)
 MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES = 2
 DOROTHEUM_MEISSEN_AUCTION_URL = "https://www.dorotheum.com/en/a/123070/"
@@ -483,6 +491,48 @@ def collect_private_marketplace(
         if len(results) >= limit:
             break
     return results
+
+
+def enrich_private_marketplace_listing(
+    session: requests.Session,
+    *,
+    source: str,
+    url: str,
+    title: str,
+) -> dict[str, Any]:
+    """Fetch bounded detail evidence for an already frozen marketplace listing."""
+    config = PRIVATE_MARKETPLACE_CONFIG[source]
+    image_host = str(config["image_host"])
+    response = _get(session, url, attempts=1)
+    soup = BeautifulSoup(response.text, "html.parser")
+    description_node = soup.select_one('meta[name="description"][content]')
+    description = _clean_text(str(description_node.get("content") or "")) if description_node else ""
+    image_urls: list[str] = []
+    for node in soup.select("img[src], img[data-src]"):
+        image_url = str(node.get("data-src") or node.get("src") or "")
+        if image_host not in image_url or image_url in image_urls:
+            continue
+        image_urls.append(image_url)
+        if len(image_urls) == 8:
+            break
+    evidence_text = " ".join((title, description))
+    condition_risks: list[str] = []
+    for risk, pattern in CONDITION_RISK_PATTERNS:
+        for match in pattern.finditer(evidence_text):
+            prefix = evidence_text[max(0, match.start() - 24) : match.start()]
+            if CONDITION_NEGATIONS.search(prefix):
+                continue
+            condition_risks.append(risk)
+            break
+    return {
+        "source": source,
+        "url": url,
+        "title": title,
+        "description": description,
+        "image_urls": image_urls,
+        "condition_risks": sorted(set(condition_risks)),
+        "html_sha256": hashlib.sha256(response.content).hexdigest(),
+    }
 
 
 def collect_van_ham(

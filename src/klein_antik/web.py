@@ -28,6 +28,8 @@ from .market_sources import (
     MEISSEN_PORCELAIN_PILOT_SOURCES,
     SOURCE_MAX_PAGES,
     SOURCE_LABELS,
+    build_session,
+    enrich_private_marketplace_listing,
     sources_for_category,
 )
 from .price_filters import format_price_filter, parse_price_filter
@@ -339,6 +341,80 @@ def create_app() -> Flask:
                 "record_count": len(listings),
                 "sources": sorted({str(item["source"]) for item in listings}),
                 "listings": listings,
+            }
+        )
+
+    @app.post("/api/exports/meissen-deal-pilot/enrich")
+    @json_endpoint
+    def enrich_meissen_deal_pilot() -> Any:
+        body = request.get_json(silent=True) or {}
+        requested_ids = body.get("listing_ids")
+        requested_runs = body.get("run_ids")
+        if not isinstance(requested_ids, list) or not isinstance(requested_runs, list):
+            return jsonify({"error": "listing_ids und run_ids muessen Listen sein."}), 400
+        listing_ids = list(dict.fromkeys(str(value).strip() for value in requested_ids if str(value).strip()))
+        if not listing_ids or len(listing_ids) > 25:
+            return jsonify({"error": "Es sind ein bis 25 Listing-IDs erlaubt."}), 400
+        try:
+            run_ids = list(dict.fromkeys(int(value) for value in requested_runs if int(value) > 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "run_ids muessen positive ganze Zahlen sein."}), 400
+        if not run_ids:
+            return jsonify({"error": "Mindestens eine run_id wird benoetigt."}), 400
+
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT l.source, l.source_item_id, l.title, l.url
+                FROM market_listings AS l
+                JOIN market_listing_query_matches AS qm ON qm.listing_id = l.id
+                JOIN search_queries AS q ON q.id = qm.query_id
+                WHERE qm.last_run_id = ANY(%s)
+                  AND q.id = %s
+                  AND l.source = ANY(%s)
+                  AND l.price_status = 'ask'
+                """,
+                (run_ids, MEISSEN_ARCHIVE_QUERY_ID, list(MEISSEN_DEAL_PILOT_SOURCES)),
+            ).fetchall()
+        listings = {
+            f"{row['source']}:{row['source_item_id']}": dict(row)
+            for row in rows
+        }
+        missing = [listing_id for listing_id in listing_ids if listing_id not in listings]
+        if missing:
+            return jsonify({"error": "Unbekannte Listing-IDs: " + ", ".join(missing)}), 400
+
+        session = build_session()
+        details: list[dict[str, Any]] = []
+        failures: list[dict[str, str]] = []
+        try:
+            for listing_id in listing_ids:
+                listing = listings[listing_id]
+                try:
+                    detail = enrich_private_marketplace_listing(
+                        session,
+                        source=str(listing["source"]),
+                        url=str(listing["url"]),
+                        title=str(listing["title"]),
+                    )
+                    detail["listing_id"] = listing_id
+                    detail["fetched_at"] = datetime.now(timezone.utc).isoformat()
+                    details.append(detail)
+                except Exception as exc:
+                    failures.append(
+                        {"listing_id": listing_id, "error": f"{type(exc).__name__}: {exc}"[:500]}
+                    )
+        finally:
+            session.close()
+        return jsonify(
+            {
+                "schema_version": 1,
+                "run_ids": run_ids,
+                "requested_count": len(listing_ids),
+                "detail_count": len(details),
+                "failure_count": len(failures),
+                "details": details,
+                "failures": failures,
             }
         )
 
