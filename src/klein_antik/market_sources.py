@@ -21,14 +21,11 @@ USER_AGENT = (
 )
 REQUEST_TIMEOUT_SECONDS = 35
 EXTERNAL_REQUEST_TIMEOUT_SECONDS = 12
-MEHLIS_MEISSEN_ARCHIVE_PAGES = (("11925", 4),)
-
 SOURCE_PAGE_SIZES = {
     "auctionet": 48,
     "quittenbaum": 15,
     "lempertz": 10,
     "bruun_rasmussen": 30,
-    "mehlis": 25,
     "van_ham": 20,
     "dorotheum": 200,
     "liveauctioneers": 24,
@@ -41,7 +38,6 @@ SOURCE_MAX_PAGES = {
     "quittenbaum": 5,
     "lempertz": 2,
     "bruun_rasmussen": 1,
-    "mehlis": len(MEHLIS_MEISSEN_ARCHIVE_PAGES),
     "van_ham": 1,
     "dorotheum": 1,
     "liveauctioneers": 1,
@@ -88,8 +84,12 @@ MEISSEN_ARCHIVE_RESULT_LIMIT = (
     (MEISSEN_ARCHIVE_TARGET_PAGE - MEISSEN_ARCHIVE_START_PAGE + 1)
     * SOURCE_PAGE_SIZES[MEISSEN_ARCHIVE_SOURCE]
 )
-MEISSEN_PORCELAIN_PILOT_SOURCES = ("van_ham", "mehlis")
-MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS = {"van_ham": 1, "mehlis": 1}
+MEISSEN_PORCELAIN_PILOT_SOURCES = ("van_ham", "quittenbaum", "bruun_rasmussen")
+MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS = {
+    "van_ham": 1,
+    "quittenbaum": 1,
+    "bruun_rasmussen": 1,
+}
 DOROTHEUM_MEISSEN_AUCTION_URL = "https://www.dorotheum.com/en/a/123070/"
 
 CATEGORY_SOURCES = {
@@ -169,7 +169,6 @@ def collect_batch(
         "quittenbaum": collect_quittenbaum,
         "lempertz": collect_lempertz,
         "bruun_rasmussen": collect_bruun_rasmussen,
-        "mehlis": collect_mehlis,
         "van_ham": collect_van_ham,
         "dorotheum": collect_dorotheum,
         "liveauctioneers": collect_liveauctioneers,
@@ -346,134 +345,6 @@ def collect_auctionet(
             )
         )
     return [result for result in results if result["source_item_id"] and result["title"]]
-
-
-def collect_mehlis(
-    session: requests.Session,
-    query: str,
-    *,
-    limit: int,
-    page: int,
-) -> list[dict[str, Any]]:
-    """Collect one curated Mehlis page containing Meissen result lots."""
-    if page > len(MEHLIS_MEISSEN_ARCHIVE_PAGES):
-        return []
-    catalog_id, catalogue_page = MEHLIS_MEISSEN_ARCHIVE_PAGES[page - 1]
-    response = _get(
-        session,
-        f"https://www.mehlis.eu/de/catalogs/{catalog_id}/9/result/",
-        params={"page": catalogue_page},
-    )
-    soup = BeautifulSoup(response.text, "html.parser")
-    candidates: dict[str, tuple[str, str]] = {}
-    for link in soup.select('a[href*="/catalogs/"][href*="/item/"]'):
-        if not isinstance(link, Tag):
-            continue
-        item_url = urljoin("https://www.mehlis.eu", str(link.get("href") or ""))
-        if not item_url:
-            continue
-        card = link.find_parent("tr") or _listing_card(link)
-        fallback_title = _mehlis_card_title(card, _listing_title(link, card))
-        fallback_image = _listing_image(card, "https://www.mehlis.eu")
-        known = candidates.get(item_url)
-        if not known or (fallback_title and not known[0]):
-            candidates[item_url] = (fallback_title, fallback_image)
-
-    if not candidates:
-        page_title = _clean_text(
-            soup.title.get_text(" ", strip=True) if soup.title else "unbekannte Antwort"
-        )
-        raise MarketSourceError(
-            "Mehlis-Ergebnisseite enthaelt keine oeffentlichen Loslinks "
-            f"(Seitentitel: {page_title[:120]})."
-        )
-
-    results: list[dict[str, Any]] = []
-    for index, (item_url, (fallback_title, fallback_image)) in enumerate(
-        list(candidates.items())[:limit]
-    ):
-        detail = _get(session, item_url)
-        detail_soup = BeautifulSoup(detail.text, "html.parser")
-        detail_text = _clean_text(detail_soup.get_text(" ", strip=True))
-        detail_title = _mehlis_title(detail_soup)
-        title = (
-            fallback_title
-            if "meissen" in _normalize(fallback_title)
-            else detail_title or fallback_title
-        )
-        hammer_match = re.search(
-            r"Zuschlag\s*:\s*"
-            r"((?:\d{1,3}(?:[.\s]\d{3})*|\d+)(?:,\d{2})?\s*(?:â‚¬|EUR))",
-            detail_text,
-            flags=re.IGNORECASE,
-        )
-        hammer_raw = _clean_text(hammer_match.group(1)) if hammer_match else ""
-        hammer, currency = parse_money(hammer_raw)
-        estimate_match = re.search(
-            r"Limit\s*:\s*"
-            r"((?:\d{1,3}(?:[.\s]\d{3})*|\d+)(?:,\d{2})?\s*(?:â‚¬|EUR))",
-            detail_text,
-            flags=re.IGNORECASE,
-        )
-        estimate_raw = _clean_text(estimate_match.group(1)) if estimate_match else ""
-        image_node = detail_soup.select_one('meta[property="og:image"][content]')
-        image_url = (
-            str(image_node.get("content") or "") if image_node else fallback_image
-        )
-        sold = hammer is not None and hammer > 0
-        results.append(
-            _result(
-                source="mehlis",
-                source_item_id=_mehlis_item_id(catalog_id, item_url),
-                title=title,
-                url=item_url,
-                image_url=image_url,
-                price_status="sold" if sold else "unsold",
-                price_value=hammer if sold else None,
-                price_raw=hammer_raw if sold else "",
-                currency=currency if sold else "",
-                price_basis="hammer" if sold else "unknown",
-                estimate_raw=estimate_raw,
-                attribution=_attribution(title),
-                raw_result={
-                    "catalog_id": catalog_id,
-                    "catalogue_page": catalogue_page,
-                    "hammer": hammer_raw,
-                    "estimate": estimate_raw,
-                },
-            )
-        )
-        if index + 1 < min(len(candidates), limit):
-            time.sleep(0.5)
-    return [result for result in results if result["source_item_id"] and result["title"]]
-
-
-def _mehlis_title(soup: BeautifulSoup) -> str:
-    title_node = soup.select_one('meta[property="og:title"][content]')
-    if title_node:
-        title = _clean_text(str(title_node.get("content") or ""))
-        if "auktionshaus mehlis" not in _normalize(title):
-            return title
-    for heading in soup.select("h2, h3, h4"):
-        title = _clean_text(heading.get_text(" ", strip=True))
-        if title and "katalog-nr" not in title.lower() and title.lower() != "porzellan":
-            return title
-    return ""
-
-
-def _mehlis_card_title(card: Tag, fallback_title: str) -> str:
-    card_text = _clean_text(card.get_text(" ", strip=True))
-    title_match = re.search(
-        r"\b(Meissen\b.*?)(?=\s+\d[\d.\s]*,\d{2}\b)",
-        card_text,
-        flags=re.IGNORECASE,
-    )
-    return _clean_text(title_match.group(1)) if title_match else fallback_title
-
-
-def _mehlis_item_id(catalog_id: str, item_url: str) -> str:
-    match = re.search(r"/item/(\d+)/?$", item_url)
-    return f"{catalog_id}:{match.group(1)}" if match else f"{catalog_id}:{_id_from_url(item_url)}"
 
 
 def collect_van_ham(
