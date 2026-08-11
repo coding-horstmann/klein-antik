@@ -21,6 +21,7 @@ from .market_sources import (
     MEISSEN_ARCHIVE_SOURCE,
     MEISSEN_ARCHIVE_START_PAGE,
     MEISSEN_ARCHIVE_TARGET_PAGE,
+    MEISSEN_DEAL_PILOT_SOURCES,
     MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES,
     MEISSEN_PORCELAIN_BACKFILL_SOURCES,
     MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS,
@@ -1366,6 +1367,71 @@ def create_app() -> Flask:
                 "planned_queries": 1,
                 "planned_tasks": len(tasks),
                 "sources": [source for source, _start, _pages in tasks],
+            }
+        ), 201
+
+    @app.post("/api/runs/meissen-deal-source-pilot")
+    @json_endpoint
+    def start_meissen_deal_source_pilot() -> Any:
+        with connection() as conn:
+            worker = conn.execute(
+                """
+                SELECT last_seen_at > now() - interval '90 seconds' AS online
+                FROM worker_status
+                WHERE name = 'market-importer'
+                """
+            ).fetchone()
+            if not worker or not worker["online"]:
+                return jsonify({"error": "Der Marktpreis-Importer ist nicht erreichbar."}), 409
+
+            active = conn.execute(
+                """
+                SELECT id
+                FROM market_runs
+                WHERE status IN ('queued', 'running', 'cancel_requested')
+                LIMIT 1
+                """
+            ).fetchone()
+            if active:
+                return jsonify({"error": f"Lauf {active['id']} ist bereits aktiv."}), 409
+
+            query = conn.execute(
+                """
+                SELECT id
+                FROM search_queries
+                WHERE id = %s AND enabled
+                """,
+                (MEISSEN_ARCHIVE_QUERY_ID,),
+            ).fetchone()
+            if not query:
+                return jsonify({"error": "Die Meissen-Suche ist nicht aktiv."}), 409
+
+            run = conn.execute(
+                """
+                INSERT INTO market_runs (kind, planned_tasks)
+                VALUES ('source_pilot', %s)
+                RETURNING id
+                """,
+                (len(MEISSEN_DEAL_PILOT_SOURCES),),
+            ).fetchone()
+            for source in MEISSEN_DEAL_PILOT_SOURCES:
+                conn.execute(
+                    """
+                    INSERT INTO market_run_tasks (
+                        run_id, query_id, source, start_page, page_count
+                    )
+                    VALUES (%s, %s, %s, 1, 1)
+                    """,
+                    (run["id"], MEISSEN_ARCHIVE_QUERY_ID, source),
+                )
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run["id"],
+                "kind": "source_pilot",
+                "planned_queries": 1,
+                "planned_tasks": len(MEISSEN_DEAL_PILOT_SOURCES),
+                "sources": list(MEISSEN_DEAL_PILOT_SOURCES),
             }
         ), 201
 

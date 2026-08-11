@@ -87,18 +87,13 @@ MEISSEN_ARCHIVE_RESULT_LIMIT = (
     (MEISSEN_ARCHIVE_TARGET_PAGE - MEISSEN_ARCHIVE_START_PAGE + 1)
     * SOURCE_PAGE_SIZES[MEISSEN_ARCHIVE_SOURCE]
 )
-MEISSEN_PORCELAIN_PILOT_SOURCES = (
-    "van_ham",
-    "quittenbaum",
-    "bruun_rasmussen",
-    "blocket",
-)
+MEISSEN_PORCELAIN_PILOT_SOURCES = ("van_ham", "quittenbaum", "bruun_rasmussen")
 MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS = {
     "van_ham": 1,
     "quittenbaum": 1,
     "bruun_rasmussen": 1,
-    "blocket": 1,
 }
+MEISSEN_DEAL_PILOT_SOURCES = ("blocket",)
 MEISSEN_PORCELAIN_BACKFILL_SOURCES = ("quittenbaum",)
 MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES = 2
 DOROTHEUM_MEISSEN_AUCTION_URL = "https://www.dorotheum.com/en/a/123070/"
