@@ -10,17 +10,17 @@ from typing import Any
 
 
 OBJECT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("service_or_set", re.compile(r"\b(?:service|set|collection|parts?|pieces?|pcs?|servis)\b", re.I)),
-    ("figurine", re.compile(r"\b(?:figurine|figure|figural|statue|figur|skulptur)\b", re.I)),
+    ("service_or_set", re.compile(r"\b(?:service|set|collection|parts?|pieces?|pcs?|servis|kaffe(?:e)?service|kahvisetti|middagsservice)\b", re.I)),
+    ("figurine", re.compile(r"\b(?:figurine|figure|figural|statue|figu\w*|skulptur|statuett\w*)\b", re.I)),
     ("wall_bracket", re.compile(r"\bwall bracket\b", re.I)),
-    ("candlestick", re.compile(r"\b(?:candlestick|candleholder)\b", re.I)),
-    ("teapot_or_coffee_pot", re.compile(r"\b(?:teapot|coffee pot|tea pot)\b", re.I)),
-    ("cup_and_saucer", re.compile(r"\b(?:cup with saucer|cup and saucer|mocha cup)\b", re.I)),
-    ("vase", re.compile(r"\b(?:vase|beaker|vas)\b", re.I)),
-    ("box", re.compile(r"\b(?:lidded box|box)\b", re.I)),
-    ("tile_or_plaque", re.compile(r"\b(?:tile|portrait|plaque)\b", re.I)),
-    ("ashtray", re.compile(r"\bashtray\b", re.I)),
-    ("plate_or_dish", re.compile(r"\b(?:plate|dish|platter|bowl|cake plate|teller|schale)\b", re.I)),
+    ("candlestick", re.compile(r"\b(?:candlestick|candleholder|lysestage|ljusstake)\b", re.I)),
+    ("teapot_or_coffee_pot", re.compile(r"\b(?:teapot|coffee pot|tea pot|kaffekande|kaffekannu|teekannu)\b", re.I)),
+    ("cup_and_saucer", re.compile(r"\b(?:cup with saucer|cup and saucer|mocha cup|kopper?|kuppi|tasse|underkop|aluslautanen)\b", re.I)),
+    ("vase", re.compile(r"\b(?:vase|beaker|vas|maljakko)\b", re.I)),
+    ("box", re.compile(r"\b(?:lidded box|box|dosa|rasia)\b", re.I)),
+    ("tile_or_plaque", re.compile(r"\b(?:tile|portrait|plaque|seina?lautanen)\b", re.I)),
+    ("ashtray", re.compile(r"\b(?:ashtray|tuhkakuppi)\b", re.I)),
+    ("plate_or_dish", re.compile(r"\b(?:plate|dish|platter|bowl|cake plate|teller|schale|tallerken|tallrik|lautanen|lautaset|platte|fat|vati|sk[a-z]*l|kulho)\b", re.I)),
 )
 QUALITY_PATTERN = re.compile(
     r"\b(?:second|2nd|third|3rd|fourth|4th)"
@@ -28,17 +28,18 @@ QUALITY_PATTERN = re.compile(
     r"\s+(?:quality|choice|wahl)\b",
     re.I,
 )
-STYLE_PATTERN = re.compile(r"\bmeissen[- ]?(?:style|like)\b", re.I)
+STYLE_PATTERN = re.compile(r"\bmeissen[- ]?(?:style|like|tyylinen|stil)\b", re.I)
 OTHER_MAKER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("other_maker_chelsea", re.compile(r"\bchelsea porcelain\b", re.I)),
     ("other_maker_hc_selb", re.compile(r"\bh\s*&\s*c\s+selb\b", re.I)),
+    ("other_maker_gustavsberg", re.compile(r"\bgustavsberg\s+meissen", re.I)),
 )
 UNVERIFIED_MAKER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("maker_unverified_stadt_meissen", re.compile(r"\bstadt meissen\b", re.I)),
     ("maker_unverified_npm", re.compile(r"\bNPM\s+meissen\b", re.I)),
     ("maker_unverified_somag", re.compile(r"\bsomag\s+meissen\b", re.I)),
 )
-PIECE_COUNT_PATTERN = re.compile(r"\b(\d{1,3})\s*(?:pcs?\.?|pieces?|parts?)\b", re.I)
+PIECE_COUNT_PATTERN = re.compile(r"\b(\d{1,3})\s*(?:pcs?\.?|pieces?|parts?|kpl|st)\b", re.I)
 MEISSEN_TITLE_PATTERN = re.compile(r"\bmeiss(?:en|ner)\b", re.I)
 
 

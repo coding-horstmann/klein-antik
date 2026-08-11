@@ -500,6 +500,25 @@ class MeissenScoutValidatorTests(unittest.TestCase):
         self.assertEqual(result["records"][1]["screening_status"], "reject_before_reference_pass")
         self.assertEqual(result["records"][2]["risks"], [])
 
+    def test_zero_shot_recognizes_scandinavian_porcelain_terms(self) -> None:
+        classify_object = self.zero_shot_builder.classify_object
+        self.assertEqual(classify_object("Meissen tallrik"), "plate_or_dish")
+        self.assertEqual(classify_object("Meissen maljakko"), "vase")
+        self.assertEqual(classify_object("Meissen kahvisetti"), "service_or_set")
+        self.assertEqual(classify_object("Meissen figuuri"), "figurine")
+        self.assertEqual(
+            self.zero_shot_builder.classify_risks(
+                "Meissen-tyylinen porsliinifiguuri", []
+            ),
+            ["meissen_style"],
+        )
+        self.assertEqual(
+            self.zero_shot_builder.classify_risks(
+                "Gustavsberg Meissen-sarjan porcelain", []
+            ),
+            ["other_maker_gustavsberg"],
+        )
+
     def test_zero_shot_marks_broad_porcelain_as_unverified(self) -> None:
         result = self.zero_shot_builder.build_zero_shot(
             {
