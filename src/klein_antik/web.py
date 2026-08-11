@@ -1186,6 +1186,7 @@ def create_app() -> Flask:
     @app.post("/api/runs/meissen-porcelain-pilot")
     @json_endpoint
     def start_meissen_porcelain_pilot() -> Any:
+        force_refresh = request.args.get("refresh") == "1"
         with connection() as conn:
             worker = conn.execute(
                 """
@@ -1229,9 +1230,13 @@ def create_app() -> Flask:
                     """,
                     (MEISSEN_ARCHIVE_QUERY_ID, source),
                 ).fetchone()
-                if cursor and cursor["exhausted"]:
+                if cursor and cursor["exhausted"] and not force_refresh:
                     continue
-                start_page = max(1, int(cursor["next_page"]) if cursor else 1)
+                start_page = (
+                    1
+                    if force_refresh
+                    else max(1, int(cursor["next_page"]) if cursor else 1)
+                )
                 page_count = min(
                     MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS[source],
                     SOURCE_MAX_PAGES[source] - start_page + 1,
