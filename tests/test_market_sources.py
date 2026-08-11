@@ -22,6 +22,7 @@ from klein_antik.market_sources import (
     collect_batch,
     enrich_private_marketplace_listing,
     _external_request_headers,
+    marketplace_discovery_scopes,
     parse_money,
     relevant_to_query,
     search_query_for,
@@ -98,6 +99,12 @@ class MarketSourceTests(unittest.TestCase):
                 ("tori", "posliini"),
                 ("tori", "sipulikoriste"),
             },
+        )
+        self.assertEqual(
+            marketplace_discovery_scopes(
+                ["meissen", "meissen-broad-tori-posliini", "meissen"]
+            ),
+            ["explicit_query", "broad_porcelain_category"],
         )
 
     def test_money_formats(self) -> None:

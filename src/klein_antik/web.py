@@ -34,6 +34,7 @@ from .market_sources import (
     SOURCE_LABELS,
     build_session,
     enrich_private_marketplace_listing,
+    marketplace_discovery_scopes,
     sources_for_category,
 )
 from .price_filters import format_price_filter, parse_price_filter
@@ -296,6 +297,7 @@ def create_app() -> Flask:
                     l.attribution,
                     l.last_seen_at,
                     l.raw_result,
+                    array_agg(DISTINCT q.id ORDER BY q.id) AS query_ids,
                     array_agg(DISTINCT q.query_text ORDER BY q.query_text) AS query_texts
                 FROM market_listings AS l
                 JOIN market_listing_query_matches AS qm ON qm.listing_id = l.id
@@ -323,12 +325,7 @@ def create_app() -> Flask:
             source = str(record["source"])
             external_id = str(record["source_item_id"])
             query_ids = list(record.get("query_ids") or [])
-            scopes = [
-                "broad_porcelain_category"
-                if query_id in MEISSEN_BROAD_DISCOVERY_QUERY_IDS
-                else "explicit_query"
-                for query_id in query_ids
-            ]
+            scopes = marketplace_discovery_scopes(query_ids)
             listings.append(
                 {
                     "listing_id": f"{source}:{external_id}",
@@ -344,7 +341,7 @@ def create_app() -> Flask:
                     "availability": str(raw_result.get("availability") or "active"),
                     "attribution_status": str(record["attribution"] or "stated"),
                     "discovery_queries": list(record["query_texts"] or []),
-                    "discovery_scopes": list(dict.fromkeys(scopes)),
+                    "discovery_scopes": scopes,
                     "collected_at": record["last_seen_at"].isoformat(),
                 }
             )

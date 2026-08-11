@@ -127,6 +127,18 @@ MEISSEN_MARKETPLACE_DISCOVERY_TASKS = (
     ),
 )
 
+
+def marketplace_discovery_scopes(query_ids: list[str] | tuple[str, ...]) -> list[str]:
+    """Return the audit scopes attached to a frozen marketplace listing."""
+    scopes = [
+        "broad_porcelain_category"
+        if query_id in MEISSEN_BROAD_DISCOVERY_QUERY_IDS
+        else "explicit_query"
+        for query_id in query_ids
+    ]
+    return list(dict.fromkeys(scopes))
+
+
 PRIVATE_MARKETPLACE_CONFIG = {
     "blocket": {
         "base_url": "https://www.blocket.se",
