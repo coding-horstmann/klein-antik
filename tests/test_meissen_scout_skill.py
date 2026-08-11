@@ -47,6 +47,20 @@ REFERENCE_IMAGE_FREEZER_PATH = (
     / "scripts"
     / "freeze_selected_reference_images.py"
 )
+REFERENCE_PASS_PATH = (
+    ROOT
+    / "skills"
+    / "run-meissen-porcelain-scout-pipeline"
+    / "scripts"
+    / "build_reference_pass.py"
+)
+SHORTLIST_ENRICHER_PATH = (
+    ROOT
+    / "skills"
+    / "run-meissen-porcelain-scout-pipeline"
+    / "scripts"
+    / "enrich_auctionet_shortlist.py"
+)
 
 
 def load_validator() -> ModuleType:
@@ -104,6 +118,28 @@ def load_reference_image_freezer() -> ModuleType:
     return module
 
 
+def load_reference_pass_builder() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "build_meissen_reference_pass", REFERENCE_PASS_PATH
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Cannot load Meissen reference pass builder")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_shortlist_enricher() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "enrich_meissen_auctionet_shortlist", SHORTLIST_ENRICHER_PATH
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Cannot load Meissen shortlist enricher")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def write_json(path: Path, payload: object) -> None:
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -123,6 +159,8 @@ class MeissenScoutValidatorTests(unittest.TestCase):
         cls.image_freezer = load_image_freezer()
         cls.zero_shot_builder = load_zero_shot_builder()
         cls.reference_image_freezer = load_reference_image_freezer()
+        cls.reference_pass_builder = load_reference_pass_builder()
+        cls.shortlist_enricher = load_shortlist_enricher()
 
     def test_auctionet_collector_preserves_active_price_images_and_risks(self) -> None:
         payload = {
@@ -419,6 +457,146 @@ class MeissenScoutValidatorTests(unittest.TestCase):
             result["records"][0]["attribution_evidence"],
             "broad_category_requires_image_or_mark_evidence",
         )
+
+    def test_zero_shot_uses_canonical_url_when_the_title_is_truncated(self) -> None:
+        result = self.zero_shot_builder.build_zero_shot(
+            {
+                "listings": [
+                    {
+                        "listing_id": "auctionet:5",
+                        "title": "Michel Victor Acier, porcelain figurine...",
+                        "url": "https://auctionet.com/en/5-acier-figurine-meissen",
+                        "risks": [],
+                    }
+                ]
+            },
+            {"images": [{"listing_id": "auctionet:5", "image_file": "images/5.jpg"}]},
+            deal_hash="a" * 64,
+            image_hash="b" * 64,
+        )
+
+        self.assertEqual(result["records"][0]["attribution_evidence"], "canonical_url_claim")
+
+    def test_reference_pass_requires_same_object_type_and_keeps_title_match_provisional(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            paths = {
+                "references": directory / "references.json",
+                "profile": directory / "profile.json",
+                "deals": directory / "deals.json",
+                "zero": directory / "zero.json",
+            }
+            write_json(
+                paths["references"],
+                {
+                    "records": [
+                        {
+                            "reference_id": "auctionet:r1",
+                            "title": "Michel Victor Acier Meissen figurine model F21X",
+                            "price_value": "100",
+                            "currency": "USD",
+                            "price_basis": "hammer",
+                            "url": "https://auctionet.com/en/r1",
+                        },
+                        {
+                            "reference_id": "auctionet:r2",
+                            "title": "Meissen vase model F21X",
+                            "price_value": "200",
+                            "currency": "USD",
+                            "price_basis": "hammer",
+                            "url": "https://auctionet.com/en/r2",
+                        },
+                    ]
+                },
+            )
+            write_json(
+                paths["profile"],
+                {
+                    "records": [
+                        {"reference_id": "auctionet:r1", "object_type": "figurine", "risks": []},
+                        {"reference_id": "auctionet:r2", "object_type": "vase", "risks": []},
+                    ]
+                },
+            )
+            write_json(
+                paths["deals"],
+                {
+                    "listings": [
+                        {
+                            "listing_id": "auctionet:d1",
+                            "title": "Michel Victor Acier, Meissen figurine, model F21X",
+                            "url": "https://auctionet.com/en/d1",
+                            "price_eur": "50.00",
+                            "sale_mode": "auction",
+                        }
+                    ]
+                },
+            )
+            write_json(
+                paths["zero"],
+                {
+                    "records": [
+                        {
+                            "listing_id": "auctionet:d1",
+                            "object_type": "figurine",
+                            "screening_status": "manual_object_review_required",
+                            "attribution_evidence": "title_claim",
+                            "risks": [],
+                        }
+                    ]
+                },
+            )
+            result = self.reference_pass_builder.build_reference_pass(
+                self.reference_pass_builder.attach_path(
+                    json.loads(paths["references"].read_text(encoding="utf-8")), paths["references"]
+                ),
+                self.reference_pass_builder.attach_path(
+                    json.loads(paths["profile"].read_text(encoding="utf-8")), paths["profile"]
+                ),
+                self.reference_pass_builder.attach_path(
+                    json.loads(paths["deals"].read_text(encoding="utf-8")), paths["deals"]
+                ),
+                self.reference_pass_builder.attach_path(
+                    json.loads(paths["zero"].read_text(encoding="utf-8")), paths["zero"]
+                ),
+                rates={"EUR": self.reference_pass_builder.Decimal("1"), "USD": self.reference_pass_builder.Decimal("2")},
+                snapshot_date="2026-08-11",
+            )
+
+        record = result["records"][0]
+        self.assertEqual(record["status"], "title_match_requires_image_review")
+        self.assertEqual(record["potential_comparables"][0]["reference_id"], "auctionet:r1")
+        self.assertEqual(record["directional_price_summary"]["p25_eur"], "50.00")
+
+    def test_reference_pass_does_not_treat_generic_colour_words_as_comparable_evidence(self) -> None:
+        score, match_kind, signals = self.reference_pass_builder.reference_match(
+            "Meissen yellow floral vase with gold rim",
+            "Meissen yellow floral vase with gold rim",
+            token_frequency=self.reference_pass_builder.Counter(),
+        )
+
+        self.assertEqual(score, 0)
+        self.assertEqual(match_kind, "no_title_match")
+        self.assertEqual(signals, [])
+
+    def test_shortlist_detail_enrichment_extracts_model_size_and_condition_risks(self) -> None:
+        detail = self.shortlist_enricher.extract_detail(
+            """
+            <h1>Michel Victor Acier, model F21X</h1>
+            <h2>Description</h2><p>Height 14 cm. Designed 1779.</p>
+            <h2>Condition</h2><p>Arm with glued repair. Damaged hand. Basket with loss. Chip on base.</p>
+            """,
+            {
+                "listing_id": "auctionet:1",
+                "url": "https://auctionet.com/en/1",
+                "title": "fallback title",
+            },
+            fetched_at="2026-08-11T12:00:00Z",
+        )
+
+        self.assertEqual(detail["model_numbers"], ["F21X"])
+        self.assertEqual(detail["height_cm"], 14.0)
+        self.assertEqual(detail["condition_risks"], ["repaired", "damage", "chip"])
 
     def test_reference_image_freezer_requires_selected_known_references(self) -> None:
         class Response:

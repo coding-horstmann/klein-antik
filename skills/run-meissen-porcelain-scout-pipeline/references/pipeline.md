@@ -76,6 +76,18 @@ Create the zero-shot file before loading `reference-corpus.json` or `reference-p
 python skills/run-meissen-porcelain-scout-pipeline/scripts/build_zero_shot_triage.py --deals runs/meissen-scout/<run-id>/deal-listings.json --images runs/meissen-scout/<run-id>/image-manifest.json --output runs/meissen-scout/<run-id>/zero-shot.json
 ```
 
+Create the separate title-led reference shortlist only after zero-shot triage. It compares only the same object type and uses rare model, decor, and artist signals to select references for individual image review. Its price band is directional and never an automatic deal decision:
+
+```powershell
+python skills/run-meissen-porcelain-scout-pipeline/scripts/build_reference_pass.py --references runs/meissen-scout/<run-id>/reference-corpus.json --reference-profile runs/meissen-scout/<run-id>/reference-profile.json --deals runs/meissen-scout/<run-id>/deal-listings.json --zero-shot runs/meissen-scout/<run-id>/zero-shot.json --output runs/meissen-scout/<run-id>/reference-pass.json
+```
+
+Before opening selected reference images, enrich only the title-match and reference-cue shortlist through Railway. This freezes listing descriptions, stated condition, model numbers, and dimensions. Listings with repairs, losses, chips, cracks, or similar condition evidence stay out of the candidate bundle unless a human explicitly overrides the exclusion:
+
+```powershell
+railway run --project 149b9ccc-711a-47c2-b75b-c5c0e609f208 --environment 4092832c-8c44-44e4-85a2-afadf3367c61 --service fbff031a-69c7-4335-b12a-55cd25cfca95 --no-local -- .\.venv\Scripts\python.exe skills/run-meissen-porcelain-scout-pipeline/scripts/enrich_auctionet_shortlist.py --deals runs/meissen-scout/<run-id>/deal-listings.json --reference-pass runs/meissen-scout/<run-id>/reference-pass.json --output runs/meissen-scout/<run-id>/shortlist-details.json
+```
+
 For an explicitly selected, high-signal reference pool, freeze its images through Railway before deciding that a visual comparable is exact:
 
 ```powershell

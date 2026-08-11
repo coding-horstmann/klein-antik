@@ -101,6 +101,8 @@ def screening_status(risks: list[str]) -> str:
 def attribution_evidence(listing: dict[str, Any], title: str) -> str:
     if MEISSEN_TITLE_PATTERN.search(title):
         return "title_claim"
+    if MEISSEN_TITLE_PATTERN.search(str(listing.get("url") or "")):
+        return "canonical_url_claim"
     scopes = {str(value) for value in listing.get("discovery_scopes", [])}
     if "broad_porcelain_category" in scopes:
         return "broad_category_requires_image_or_mark_evidence"

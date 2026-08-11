@@ -29,12 +29,13 @@ Read [pipeline.md](references/pipeline.md) and [source-policy.md](references/sou
 7. Freeze every collected listing before ranking. Preserve source, external ID, canonical URL, image URLs, original price, currency, timestamp, and raw evidence.
 8. Perform two separate reviews:
    - `zero-shot`: inspect the deal listing without opening the price corpus; identify the object and risks.
-   - `reference-pass`: select exact comparables and calculate a conservative reference band.
+   - `reference-pass`: select same-object title candidates by rare model, decor, or artist signals, then verify exact comparables with individual images before calculating a conservative reference band.
 9. Keep the zero-shot output separate and complete it first. If isolated tasks are unavailable, use separate files and do not open the reference corpus during the zero-shot pass.
-10. Take the union of candidates from both reviews. Agreement is evidence, not a requirement.
-11. Calculate directional value using the rules in [pipeline.md](references/pipeline.md). Mark fewer than three exact comparables as sparse evidence.
-12. Validate the frozen inputs and candidate bundle with `scripts/validate_scout_bundle.py`.
-13. Present the review table and artifact paths. Stop before publication and ask for an explicit review decision.
+10. For the bounded reference shortlist, freeze listing details through Railway. Capture model or form, dimensions, stated condition, and condition risks before comparing reference images. Do not automatically advance repaired, damaged, incomplete, or otherwise condition-restricted items.
+11. Take the union of candidates from both reviews. Agreement is evidence, not a requirement.
+12. Calculate directional value using the rules in [pipeline.md](references/pipeline.md). Mark fewer than three exact comparables as sparse evidence.
+13. Validate the frozen inputs and candidate bundle with `scripts/validate_scout_bundle.py`.
+14. Present the review table and artifact paths. Stop before publication and ask for an explicit review decision.
 
 ## Comparable Selection
 
