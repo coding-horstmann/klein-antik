@@ -21,7 +21,11 @@ from .market_sources import (
     MEISSEN_ARCHIVE_SOURCE,
     MEISSEN_ARCHIVE_START_PAGE,
     MEISSEN_ARCHIVE_TARGET_PAGE,
+    MEISSEN_BROAD_DISCOVERY_QUERIES,
+    MEISSEN_BROAD_DISCOVERY_QUERY_IDS,
     MEISSEN_DEAL_PILOT_SOURCES,
+    MEISSEN_MARKETPLACE_DISCOVERY_QUERY_IDS,
+    MEISSEN_MARKETPLACE_DISCOVERY_TASKS,
     MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES,
     MEISSEN_PORCELAIN_BACKFILL_SOURCES,
     MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS,
@@ -213,6 +217,7 @@ def create_app() -> Flask:
                     l.first_seen_at,
                     l.last_seen_at,
                     array_agg(DISTINCT q.id ORDER BY q.id) AS query_ids,
+                    array_agg(DISTINCT q.id ORDER BY q.id) AS query_ids,
                     array_agg(DISTINCT q.query_text ORDER BY q.query_text) AS query_texts
                 FROM market_listings AS l
                 JOIN market_listing_query_matches AS qm ON qm.listing_id = l.id
@@ -296,14 +301,18 @@ def create_app() -> Flask:
                 JOIN market_listing_query_matches AS qm ON qm.listing_id = l.id
                 JOIN search_queries AS q ON q.id = qm.query_id
                 WHERE qm.last_run_id = ANY(%s)
-                  AND q.id = %s
+                  AND q.id = ANY(%s)
                   AND l.source = ANY(%s)
                   AND l.price_status = 'ask'
                   AND l.price_value IS NOT NULL
                 GROUP BY l.id
                 ORDER BY l.source, l.source_item_id
                 """,
-                (run_ids, MEISSEN_ARCHIVE_QUERY_ID, list(MEISSEN_DEAL_PILOT_SOURCES)),
+                (
+                    run_ids,
+                    list(MEISSEN_MARKETPLACE_DISCOVERY_QUERY_IDS),
+                    list(MEISSEN_DEAL_PILOT_SOURCES),
+                ),
             ).fetchall()
 
         listings: list[dict[str, Any]] = []
@@ -313,6 +322,13 @@ def create_app() -> Flask:
             raw_result = raw_result if isinstance(raw_result, dict) else {}
             source = str(record["source"])
             external_id = str(record["source_item_id"])
+            query_ids = list(record.get("query_ids") or [])
+            scopes = [
+                "broad_porcelain_category"
+                if query_id in MEISSEN_BROAD_DISCOVERY_QUERY_IDS
+                else "explicit_query"
+                for query_id in query_ids
+            ]
             listings.append(
                 {
                     "listing_id": f"{source}:{external_id}",
@@ -328,7 +344,7 @@ def create_app() -> Flask:
                     "availability": str(raw_result.get("availability") or "active"),
                     "attribution_status": str(record["attribution"] or "stated"),
                     "discovery_queries": list(record["query_texts"] or []),
-                    "discovery_scopes": ["explicit_query"],
+                    "discovery_scopes": list(dict.fromkeys(scopes)),
                     "collected_at": record["last_seen_at"].isoformat(),
                 }
             )
@@ -370,11 +386,15 @@ def create_app() -> Flask:
                 JOIN market_listing_query_matches AS qm ON qm.listing_id = l.id
                 JOIN search_queries AS q ON q.id = qm.query_id
                 WHERE qm.last_run_id = ANY(%s)
-                  AND q.id = %s
+                  AND q.id = ANY(%s)
                   AND l.source = ANY(%s)
                   AND l.price_status = 'ask'
                 """,
-                (run_ids, MEISSEN_ARCHIVE_QUERY_ID, list(MEISSEN_DEAL_PILOT_SOURCES)),
+                (
+                    run_ids,
+                    list(MEISSEN_MARKETPLACE_DISCOVERY_QUERY_IDS),
+                    list(MEISSEN_DEAL_PILOT_SOURCES),
+                ),
             ).fetchall()
         listings = {
             f"{row['source']}:{row['source_item_id']}": dict(row)
@@ -1601,6 +1621,105 @@ def create_app() -> Flask:
                 "planned_queries": 1,
                 "planned_tasks": len(sources),
                 "sources": list(sources),
+            }
+        ), 201
+
+    @app.post("/api/runs/meissen-broad-marketplace-pilot")
+    @json_endpoint
+    def start_meissen_broad_marketplace_pilot() -> Any:
+        """Freeze one bounded, source-language porcelain discovery batch."""
+        with connection() as conn:
+            worker = conn.execute(
+                """
+                SELECT last_seen_at > now() - interval '90 seconds' AS online
+                FROM worker_status
+                WHERE name = 'market-importer'
+                """
+            ).fetchone()
+            if not worker or not worker["online"]:
+                return jsonify({"error": "Der Marktpreis-Importer ist nicht erreichbar."}), 409
+
+            active = conn.execute(
+                """
+                SELECT id
+                FROM market_runs
+                WHERE status IN ('queued', 'running', 'cancel_requested')
+                LIMIT 1
+                """
+            ).fetchone()
+            if active:
+                return jsonify({"error": f"Lauf {active['id']} ist bereits aktiv."}), 409
+
+            explicit_query = conn.execute(
+                """
+                SELECT id
+                FROM search_queries
+                WHERE id = %s AND enabled
+                """,
+                (MEISSEN_ARCHIVE_QUERY_ID,),
+            ).fetchone()
+            if not explicit_query:
+                return jsonify({"error": "Die Meissen-Suche ist nicht aktiv."}), 409
+
+            for position, (query_id, _source, query_text) in enumerate(
+                MEISSEN_BROAD_DISCOVERY_QUERIES, start=1001
+            ):
+                conn.execute(
+                    """
+                    INSERT INTO search_queries (
+                        id, category, category_label, position, query_text,
+                        ebay_domain, enabled, review_status, note
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, FALSE, 'unreviewed', %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        category = EXCLUDED.category,
+                        category_label = EXCLUDED.category_label,
+                        query_text = EXCLUDED.query_text,
+                        ebay_domain = EXCLUDED.ebay_domain,
+                        enabled = FALSE,
+                        note = EXCLUDED.note,
+                        updated_at = now()
+                    """,
+                    (
+                        query_id,
+                        "meissen_porcelain_discovery",
+                        "Meissen-Porzellan - breite Suche",
+                        position,
+                        query_text,
+                        "marketplace",
+                        "Nur Railway-Discovery; Bild- oder Markenpruefung erforderlich.",
+                    ),
+                )
+
+            run = conn.execute(
+                """
+                INSERT INTO market_runs (kind, planned_tasks)
+                VALUES ('source_pilot', %s)
+                RETURNING id
+                """,
+                (len(MEISSEN_MARKETPLACE_DISCOVERY_TASKS),),
+            ).fetchone()
+            for query_id, source, _query_text, _scope in MEISSEN_MARKETPLACE_DISCOVERY_TASKS:
+                conn.execute(
+                    """
+                    INSERT INTO market_run_tasks (
+                        run_id, query_id, source, start_page, page_count
+                    )
+                    VALUES (%s, %s, %s, 1, 1)
+                    """,
+                    (run["id"], query_id, source),
+                )
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run["id"],
+                "kind": "source_pilot",
+                "planned_queries": 1 + len(MEISSEN_BROAD_DISCOVERY_QUERIES),
+                "planned_tasks": len(MEISSEN_MARKETPLACE_DISCOVERY_TASKS),
+                "queries": [
+                    {"source": source, "query": query_text, "scope": scope}
+                    for _query_id, source, query_text, scope in MEISSEN_MARKETPLACE_DISCOVERY_TASKS
+                ],
             }
         ), 201
 

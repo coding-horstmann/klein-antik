@@ -54,6 +54,14 @@ The profile labels only clear object-type signals. It deliberately leaves unsupp
 
 Freeze deal collection separately as `deal-listings.json`. A real deal collection must run through a reviewed Railway collector that supports the selected source and porcelain search. Do not call Klein-Antik's existing `/api/deals/runs/start` route; it is designed for eBay active listings.
 
+For Blocket, DBA and Tori, start the bounded broad-porcelain discovery pilot through the protected dashboard endpoint. It runs only six fixed source-language queries, records `broad_porcelain_category` on the resulting listings, and never schedules itself. The explicit `Meissen` batch remains a separate input:
+
+```powershell
+railway run --project 149b9ccc-711a-47c2-b75b-c5c0e609f208 --environment 4092832c-8c44-44e4-85a2-afadf3367c61 --service a87e4fd2-e500-424a-a83a-9957921d1eca --no-local -- .\.venv\Scripts\python.exe skills/run-meissen-porcelain-scout-pipeline/scripts/start_broad_marketplace_discovery.py --dashboard-url https://klein-antik-dashboard-production.up.railway.app
+```
+
+After the importer completes, export that specific run ID with `export_marketplace_deals.py`. A broad-category item remains `needs_object_identification` until its frozen image or listing detail provides credible Meissen attribution.
+
 The first enabled collector is Auctionet only. It may combine explicit Meissen searches with a bounded scan of the active porcelain category. The broad category slice is discovery evidence only: an item without a Meissen title claim needs image or mark evidence before any reference pass. The collector freezes each result, the discovery query or category scope, and HTML hashes. It leaves style, reproduction, Dresden, and Saxony references in the audit batch with a risk flag. Run it through Railway:
 
 ```powershell

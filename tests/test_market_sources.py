@@ -12,6 +12,8 @@ from klein_antik.market_sources import (
     MEISSEN_ARCHIVE_SOURCE,
     MEISSEN_ARCHIVE_START_PAGE,
     MEISSEN_ARCHIVE_TARGET_PAGE,
+    MEISSEN_BROAD_DISCOVERY_QUERIES,
+    MEISSEN_MARKETPLACE_DISCOVERY_TASKS,
     MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES,
     MEISSEN_PORCELAIN_BACKFILL_SOURCES,
     SOURCE_MAX_PAGES,
@@ -74,6 +76,29 @@ class MarketSourceTests(unittest.TestCase):
         self.assertEqual(MEISSEN_PORCELAIN_BACKFILL_SOURCES, ("quittenbaum",))
         self.assertEqual(MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES, 2)
         self.assertEqual(SOURCE_MAX_PAGES["quittenbaum"], 5)
+
+    def test_meissen_broad_marketplace_discovery_is_small_and_source_bound(self) -> None:
+        self.assertEqual(len(MEISSEN_BROAD_DISCOVERY_QUERIES), 6)
+        self.assertEqual(len(MEISSEN_MARKETPLACE_DISCOVERY_TASKS), 9)
+        self.assertEqual(
+            [task for task in MEISSEN_MARKETPLACE_DISCOVERY_TASKS if task[3] == "explicit_query"],
+            [
+                ("meissen", "blocket", "Meissen", "explicit_query"),
+                ("meissen", "dba", "Meissen", "explicit_query"),
+                ("meissen", "tori", "Meissen", "explicit_query"),
+            ],
+        )
+        self.assertEqual(
+            {(source, query) for _query_id, source, query in MEISSEN_BROAD_DISCOVERY_QUERIES},
+            {
+                ("blocket", "porslin"),
+                ("blocket", "lokmonster"),
+                ("dba", "porcelaen"),
+                ("dba", "logmonster"),
+                ("tori", "posliini"),
+                ("tori", "sipulikoriste"),
+            },
+        )
 
     def test_money_formats(self) -> None:
         self.assertEqual(parse_money("EUR 1.234,50"), (Decimal("1234.50"), "EUR"))

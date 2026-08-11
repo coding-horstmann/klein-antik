@@ -14,6 +14,7 @@ from .market_sources import (
     MEISSEN_ARCHIVE_QUERY_ID,
     MEISSEN_ARCHIVE_RESULT_LIMIT,
     MEISSEN_ARCHIVE_SOURCE,
+    MEISSEN_BROAD_DISCOVERY_QUERY_IDS,
     MEISSEN_PORCELAIN_PILOT_SOURCES,
     SOURCE_PAGE_SIZES,
     SOURCE_LABELS,
@@ -176,6 +177,11 @@ def save_results(
     batch: CollectedBatch,
 ) -> None:
     results = batch.results
+    discovery_scope = (
+        "broad_porcelain_category"
+        if task["query_id"] in MEISSEN_BROAD_DISCOVERY_QUERY_IDS
+        else "explicit_query"
+    )
     unique_ids: set[str] = set()
     with connection() as conn:
         for rank, item in enumerate(results, start=1):
@@ -225,7 +231,7 @@ def save_results(
                     item["estimate_raw"],
                     item["sale_date"],
                     item["attribution"],
-                    Jsonb(item["raw_result"]),
+                    Jsonb({**item["raw_result"], "discovery_scope": discovery_scope}),
                 ),
             ).fetchone()
             conn.execute(
@@ -404,6 +410,11 @@ def process_run(
                             SOURCE_PAGE_SIZES[task["source"]]
                             * int(task["page_count"]),
                         )
+                elif task["query_id"] in MEISSEN_BROAD_DISCOVERY_QUERY_IDS:
+                    task_result_limit = max(
+                        result_limit,
+                        SOURCE_PAGE_SIZES[task["source"]] * int(task["page_count"]),
+                    )
                 batch = collect_batch(
                     task["source"],
                     task["query_text"],

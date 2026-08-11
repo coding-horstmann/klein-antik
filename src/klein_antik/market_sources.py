@@ -101,6 +101,31 @@ MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS = {
     "bruun_rasmussen": 1,
 }
 MEISSEN_DEAL_PILOT_SOURCES = ("blocket", "dba", "tori")
+# The explicit Meissen pilot cannot find listings whose seller omitted the maker.
+# Keep the broad discovery vocabulary small and source-language specific. Every
+# record from this matrix remains unverified until a later image or mark review.
+MEISSEN_BROAD_DISCOVERY_QUERIES = (
+    ("meissen-broad-blocket-porslin", "blocket", "porslin"),
+    ("meissen-broad-blocket-lokmonster", "blocket", "lokmonster"),
+    ("meissen-broad-dba-porcelaen", "dba", "porcelaen"),
+    ("meissen-broad-dba-logmonster", "dba", "logmonster"),
+    ("meissen-broad-tori-posliini", "tori", "posliini"),
+    ("meissen-broad-tori-sipulikoriste", "tori", "sipulikoriste"),
+)
+MEISSEN_BROAD_DISCOVERY_QUERY_IDS = tuple(
+    query_id for query_id, _source, _query in MEISSEN_BROAD_DISCOVERY_QUERIES
+)
+MEISSEN_MARKETPLACE_DISCOVERY_QUERY_IDS = (
+    MEISSEN_ARCHIVE_QUERY_ID,
+    *MEISSEN_BROAD_DISCOVERY_QUERY_IDS,
+)
+MEISSEN_MARKETPLACE_DISCOVERY_TASKS = (
+    *((MEISSEN_ARCHIVE_QUERY_ID, source, "Meissen", "explicit_query") for source in MEISSEN_DEAL_PILOT_SOURCES),
+    *(
+        (query_id, source, query, "broad_porcelain_category")
+        for query_id, source, query in MEISSEN_BROAD_DISCOVERY_QUERIES
+    ),
+)
 
 PRIVATE_MARKETPLACE_CONFIG = {
     "blocket": {

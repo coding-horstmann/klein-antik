@@ -16,14 +16,14 @@ Reject a batch if any source name, URL host, redirect target, command, or metada
 
 For Auctionet, the enabled pilot may combine repeatable explicit Meissen queries with a bounded broad porcelain-category slice. Broad-category hits remain unverified until a title, image, or mark provides attribution evidence.
 
-Auctionet remains the initial auction source. Blocket, DBA and Tori passed a bounded Railway source pilot on 2026-08-11 for explicit `Meissen` discovery: each produced active canonical offers with stable item IDs, images, prices and source currency. They are enabled only for frozen, manual-review deal batches; no source is part of a recurring scan yet.
+Auctionet remains the initial auction source. Blocket, DBA and Tori passed a bounded Railway source pilot on 2026-08-11 for explicit `Meissen` discovery: each produced active canonical offers with stable item IDs, images, prices and source currency. They are enabled only for frozen, manual-review deal batches; no source is part of a recurring scan yet. A separate six-query Railway pilot may search broad source-language porcelain and onion-pattern terms. Those records are explicitly marked `broad_porcelain_category` and require image or mark evidence before any Meissen valuation.
 
 ### Enabled
 
 - Auctionet: active porcelain category with a dedicated Meißen query; frozen batch only, no publishing.
-- Blocket: active fixed-price offers; explicit `Meissen` query only.
-- DBA: active fixed-price offers; explicit `Meissen` query only.
-- Tori: active fixed-price offers; explicit `Meissen` query only.
+- Blocket: active fixed-price offers; explicit `Meissen` plus bounded `porslin` and `lokmonster` discovery.
+- DBA: active fixed-price offers; explicit `Meissen` plus bounded `porcelaen` and `logmonster` discovery.
+- Tori: active fixed-price offers; explicit `Meissen` plus bounded `posliini` and `sipulikoriste` discovery.
 
 ### Pending Railway Pilots
 
@@ -47,6 +47,9 @@ Use source-language variants where supported:
 - `porcelaine de Saxe`
 - `Meissen porslin`
 - `Meissen porselen`
+- `porslin` and `lokmonster` on Blocket
+- `porcelaen` and `logmonster` on DBA
+- `posliini` and `sipulikoriste` on Tori
 
 Also inspect broad porcelain, ceramics, tableware, figurine, vase, service, cup, plate, and decorative-object categories. Broad discovery is important because private sellers may omit the manufacturer. It does not lower the evidence standard: a broad-category item becomes a candidate only after Meissen attribution evidence is found.
 
