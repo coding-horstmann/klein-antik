@@ -271,6 +271,27 @@ class MarketSourceTests(unittest.TestCase):
         )
         self.assertEqual([result["source_item_id"] for result in results], ["92"])
 
+    def test_blocket_pilot_keeps_active_fixed_price_evidence(self) -> None:
+        page = """
+        <article class="sf-search-ad">
+          <a href="/recommerce/forsale/item/123456"></a>
+          <h2>Meissen Blue Onion porcelain plate</h2>
+          <img src="https://images.blocketcdn.se/dynamic/default/item/123456/abc">
+          <span>1 200 kr</span>
+        </article>
+        """
+        session = FakeSession([page])
+
+        results = collect("blocket", "Meissen", session=session, limit=48)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["source_item_id"], "123456")
+        self.assertEqual(results[0]["price_status"], "ask")
+        self.assertEqual(results[0]["price_value"], Decimal("1200"))
+        self.assertEqual(results[0]["currency"], "SEK")
+        self.assertEqual(results[0]["raw_result"]["availability"], "active")
+        self.assertEqual(session.calls[0][1], {"q": "meissen", "page": 1})
+
     def test_auctionet_sold_and_unsold_results(self) -> None:
         payload = {
             "items": [

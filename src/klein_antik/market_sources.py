@@ -23,6 +23,7 @@ REQUEST_TIMEOUT_SECONDS = 35
 EXTERNAL_REQUEST_TIMEOUT_SECONDS = 12
 SOURCE_PAGE_SIZES = {
     "auctionet": 48,
+    "blocket": 48,
     "quittenbaum": 15,
     "lempertz": 10,
     "bruun_rasmussen": 30,
@@ -35,6 +36,7 @@ SOURCE_PAGE_SIZES = {
 }
 SOURCE_MAX_PAGES = {
     "auctionet": 200,
+    "blocket": 1,
     "quittenbaum": 5,
     "lempertz": 2,
     "bruun_rasmussen": 1,
@@ -48,6 +50,7 @@ SOURCE_MAX_PAGES = {
 
 SOURCE_LABELS = {
     "auctionet": "Auctionet",
+    "blocket": "Blocket",
     "quittenbaum": "Quittenbaum",
     "lempertz": "Lempertz",
     "bruun_rasmussen": "Bruun Rasmussen",
@@ -84,11 +87,17 @@ MEISSEN_ARCHIVE_RESULT_LIMIT = (
     (MEISSEN_ARCHIVE_TARGET_PAGE - MEISSEN_ARCHIVE_START_PAGE + 1)
     * SOURCE_PAGE_SIZES[MEISSEN_ARCHIVE_SOURCE]
 )
-MEISSEN_PORCELAIN_PILOT_SOURCES = ("van_ham", "quittenbaum", "bruun_rasmussen")
+MEISSEN_PORCELAIN_PILOT_SOURCES = (
+    "van_ham",
+    "quittenbaum",
+    "bruun_rasmussen",
+    "blocket",
+)
 MEISSEN_PORCELAIN_PILOT_PAGE_COUNTS = {
     "van_ham": 1,
     "quittenbaum": 1,
     "bruun_rasmussen": 1,
+    "blocket": 1,
 }
 MEISSEN_PORCELAIN_BACKFILL_SOURCES = ("quittenbaum",)
 MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES = 2
@@ -168,6 +177,7 @@ def collect_batch(
 ) -> CollectedBatch:
     collectors: dict[str, Callable[..., list[dict[str, Any]]]] = {
         "auctionet": collect_auctionet,
+        "blocket": collect_blocket,
         "quittenbaum": collect_quittenbaum,
         "lempertz": collect_lempertz,
         "bruun_rasmussen": collect_bruun_rasmussen,
@@ -347,6 +357,65 @@ def collect_auctionet(
             )
         )
     return [result for result in results if result["source_item_id"] and result["title"]]
+
+
+def collect_blocket(
+    session: requests.Session,
+    query: str,
+    *,
+    limit: int,
+    page: int,
+) -> list[dict[str, Any]]:
+    """Collect a bounded, active fixed-price Blocket search page for source gating."""
+    response = _get(
+        session,
+        "https://www.blocket.se/recommerce/forsale/search",
+        params={"q": query, "page": page},
+    )
+    soup = BeautifulSoup(response.text, "html.parser")
+    results: list[dict[str, Any]] = []
+    for card in soup.select("article.sf-search-ad"):
+        link = card.select_one('a[href*="/recommerce/forsale/item/"]')
+        title_node = card.select_one("h2")
+        image_node = card.select_one('img[src*="images.blocketcdn.se"]')
+        if not isinstance(link, Tag) or title_node is None or image_node is None:
+            continue
+        item_url = urljoin("https://www.blocket.se", str(link.get("href") or ""))
+        id_match = re.search(r"/recommerce/forsale/item/(\d+)", item_url)
+        title = _clean_text(title_node.get_text(" ", strip=True))
+        image_url = _clean_text(str(image_node.get("src") or ""))
+        card_text = _clean_text(card.get_text(" ", strip=True))
+        price_match = re.search(r"\b([\d.\s\u00a0]+)\s*kr\b", card_text, re.IGNORECASE)
+        price_raw = _clean_text(price_match.group(0)) if price_match else ""
+        price, _ = parse_money(f"SEK {price_raw}") if price_raw else (None, "")
+        if not id_match or not title or not image_url:
+            continue
+        results.append(
+            _result(
+                source="blocket",
+                source_item_id=id_match.group(1),
+                title=title,
+                url=item_url,
+                image_url=image_url,
+                price_status="ask",
+                price_value=price,
+                price_raw=price_raw,
+                currency="SEK" if price is not None else "",
+                price_basis="reserve",
+                estimate_raw="",
+                attribution=_attribution(title),
+                raw_result={
+                    "availability": "active",
+                    "sale_mode": "fixed_price",
+                    "search_query": query,
+                    "search_page": page,
+                    "card_text": card_text,
+                },
+            )
+        )
+        if len(results) >= limit:
+            break
+    return results
 
 
 def collect_van_ham(
