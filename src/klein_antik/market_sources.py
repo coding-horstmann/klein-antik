@@ -379,6 +379,15 @@ def collect_mehlis(
         if not known or (fallback_title and not known[0]):
             candidates[item_url] = (fallback_title, fallback_image)
 
+    if not candidates:
+        page_title = _clean_text(
+            soup.title.get_text(" ", strip=True) if soup.title else "unbekannte Antwort"
+        )
+        raise MarketSourceError(
+            "Mehlis-Ergebnisseite enthaelt keine oeffentlichen Loslinks "
+            f"(Seitentitel: {page_title[:120]})."
+        )
+
     results: list[dict[str, Any]] = []
     for index, (item_url, (fallback_title, fallback_image)) in enumerate(
         list(candidates.items())[:limit]
