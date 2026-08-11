@@ -598,6 +598,12 @@ class MeissenScoutValidatorTests(unittest.TestCase):
         self.assertEqual(detail["height_cm"], 14.0)
         self.assertEqual(detail["condition_risks"], ["repaired", "damage", "chip"])
 
+    def test_shortlist_detail_enrichment_does_not_flag_explicitly_negated_damage(self) -> None:
+        self.assertEqual(
+            self.shortlist_enricher.condition_risks("Good condition, no damage, see images."),
+            [],
+        )
+
     def test_reference_image_freezer_requires_selected_known_references(self) -> None:
         class Response:
             content = b"reference-image"

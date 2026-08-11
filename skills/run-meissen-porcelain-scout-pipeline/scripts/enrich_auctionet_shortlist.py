@@ -89,7 +89,16 @@ def section_text(soup: BeautifulSoup, label: str) -> str:
 
 
 def condition_risks(value: str) -> list[str]:
-    return [name for name, pattern in CONDITION_PATTERNS if pattern.search(value)]
+    normalized = re.sub(r"\s+", " ", value.casefold())
+    risks: list[str] = []
+    for name, pattern in CONDITION_PATTERNS:
+        for match in pattern.finditer(normalized):
+            prefix = normalized[max(0, match.start() - 32) : match.start()]
+            if re.search(r"(?:no|without|free from|none of)\s+(?:\w+\s+){0,2}$", prefix):
+                continue
+            risks.append(name)
+            break
+    return risks
 
 
 def model_numbers(*values: str) -> list[str]:
