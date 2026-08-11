@@ -169,6 +169,45 @@ class MeissenScoutValidatorTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "not a Meissen"):
                     exporter.export_from_dashboard("https://dashboard.example.test")
 
+    def test_reference_profile_marks_style_and_preserves_unknowns(self) -> None:
+        profile_spec = importlib.util.spec_from_file_location(
+            "build_meissen_reference_profile",
+            ROOT
+            / "skills"
+            / "run-meissen-porcelain-scout-pipeline"
+            / "scripts"
+            / "build_reference_profile.py",
+        )
+        if profile_spec is None or profile_spec.loader is None:
+            self.fail("Cannot load Meissen reference profiler")
+        profiler = importlib.util.module_from_spec(profile_spec)
+        profile_spec.loader.exec_module(profiler)
+        profile = profiler.build_profile(
+            {
+                "category": "meissen_porcelain",
+                "generated_at": "2026-08-11T00:00:00+00:00",
+                "records": [
+                    {
+                        "reference_id": "auctionet:1",
+                        "title": "Meissen-style vase, restored",
+                        "price_value": "100",
+                        "currency": "USD",
+                        "price_basis": "hammer",
+                    },
+                    {
+                        "reference_id": "auctionet:2",
+                        "title": "Meissen porcelain object",
+                        "price_value": "50",
+                        "currency": "USD",
+                        "price_basis": "hammer",
+                    },
+                ],
+            }
+        )
+
+        self.assertEqual(profile["object_type_counts"], {"unknown": 1, "vase": 1})
+        self.assertEqual(profile["records"][0]["risks"], ["meissen_style", "condition"])
+
 
 if __name__ == "__main__":
     unittest.main()

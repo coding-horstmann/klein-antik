@@ -44,6 +44,14 @@ If Railway injects only an internal `DATABASE_URL` into a local `railway run` co
 railway run --project 149b9ccc-711a-47c2-b75b-c5c0e609f208 --environment 4092832c-8c44-44e4-85a2-afadf3367c61 --service a87e4fd2-e500-424a-a83a-9957921d1eca --no-local -- python skills/run-meissen-porcelain-scout-pipeline/scripts/export_reference_corpus.py --dashboard-url https://klein-antik-dashboard-production.up.railway.app --output runs/meissen-scout/<run-id>/reference-corpus.json
 ```
 
+Build a preliminary, title-only profile locally from the frozen corpus:
+
+```powershell
+python skills/run-meissen-porcelain-scout-pipeline/scripts/build_reference_profile.py --references runs/meissen-scout/<run-id>/reference-corpus.json --output runs/meissen-scout/<run-id>/reference-profile.json
+```
+
+The profile labels only clear object-type signals. It deliberately leaves unsupported attributes unknown and does not create exact-comparable groups.
+
 Freeze deal collection separately as `deal-listings.json`. A real deal collection must run through a reviewed Railway collector that supports the selected source and porcelain search. Do not call Klein-Antik's existing `/api/deals/runs/start` route; it is designed for eBay active listings.
 
 ## Reference Profile

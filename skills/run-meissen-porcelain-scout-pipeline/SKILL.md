@@ -23,7 +23,7 @@ Read [pipeline.md](references/pipeline.md) and [source-policy.md](references/sou
 1. Resolve the canonical repositories, Railway service, runtime, and run directory from [pipeline.md](references/pipeline.md).
 2. Export the current sold Meissen reference corpus with `scripts/export_reference_corpus.py`. Use a read-only database connection, freeze the JSON file, and record its SHA-256 hash.
 3. Report the actual reference count, source distribution, currencies, and price bases. Do not reuse a remembered count.
-4. Enrich references with the narrowest defensible fields visible in title and images: object type, model or form number, decor, artist or modeller, period, dimensions, piece count, condition, attribution confidence, and mark evidence.
+4. Create `reference-profile.json` with `scripts/build_reference_profile.py`. Its title-only classifications are preliminary. Enrich shortlisted references further with image evidence for object type, model or form number, decor, artist or modeller, period, dimensions, piece count, condition, attribution confidence, and mark evidence.
 5. Build reference groups from genuinely comparable objects. Use sold prices only for numerical value bands. Preserve original prices and price bases.
 6. Collect or reuse a fresh frozen batch from approved non-eBay sources. Run governed collectors through Railway; do not improvise direct marketplace browser scraping.
 7. Freeze every collected listing before ranking. Preserve source, external ID, canonical URL, image URLs, original price, currency, timestamp, and raw evidence.
