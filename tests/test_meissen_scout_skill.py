@@ -225,6 +225,76 @@ class MeissenScoutValidatorTests(unittest.TestCase):
         self.assertEqual(listings[0]["price_eur"], "90.91")
         self.assertEqual(listings[0]["fx_rate"], "11.0000")
 
+    def test_discovery_collector_merges_explicit_and_broad_category_hits(self) -> None:
+        explicit = {
+            "items": [
+                {
+                    "id": 301,
+                    "shortTitle": "Meissen porcelain figurine",
+                    "url": "/en/301-meissen-figurine",
+                    "amountValue": "100 EUR",
+                }
+            ]
+        }
+        broad = {
+            "items": [
+                {
+                    "id": 301,
+                    "shortTitle": "Meissen porcelain figurine",
+                    "url": "/en/301-meissen-figurine",
+                    "amountValue": "100 EUR",
+                },
+                {
+                    "id": 302,
+                    "shortTitle": "Porcelain figure, unmarked",
+                    "url": "/en/302-porcelain-figure",
+                    "amountValue": "40 EUR",
+                },
+            ]
+        }
+        pages = [
+            '<div data-react-props="' + html.escape(json.dumps(payload), quote=True) + '"></div>'
+            for payload in (explicit, broad)
+        ]
+
+        class Response:
+            def __init__(self, markup: str) -> None:
+                self.text = markup
+                self.content = markup.encode("utf-8")
+
+            def raise_for_status(self) -> None:
+                return None
+
+        class Session:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, object]] = []
+
+            def get(self, _url: object, **kwargs: object) -> Response:
+                self.calls.append(dict(kwargs.get("params") or {}))
+                return Response(pages.pop(0))
+
+        session = Session()
+        listings, snapshots = self.collector.collect_discovery_listings(
+            session,
+            queries=["Meissen", None],
+            max_pages=1,
+            limit=48,
+            collected_at="2026-08-11T12:00:00Z",
+        )
+
+        self.assertEqual(len(listings), 2)
+        self.assertEqual(len(snapshots), 2)
+        self.assertEqual(session.calls, [{"page": 1, "q": "Meissen"}, {"page": 1}])
+        claimed = next(listing for listing in listings if listing["listing_id"] == "auctionet:301")
+        broad = next(listing for listing in listings if listing["listing_id"] == "auctionet:302")
+        self.assertEqual(claimed["discovery_queries"], ["Meissen"])
+        self.assertEqual(
+            claimed["discovery_scopes"],
+            ["broad_porcelain_category", "explicit_query"],
+        )
+        self.assertEqual(broad["discovery_queries"], [])
+        self.assertEqual(broad["discovery_scopes"], ["broad_porcelain_category"])
+
     def test_image_freezer_keeps_one_primary_image_and_audit_hash(self) -> None:
         class Response:
             content = b"image-bytes"
@@ -327,6 +397,28 @@ class MeissenScoutValidatorTests(unittest.TestCase):
         self.assertEqual(result["records"][0]["screening_status"], "restricted_comparables_only")
         self.assertEqual(result["records"][1]["screening_status"], "reject_before_reference_pass")
         self.assertEqual(result["records"][2]["risks"], [])
+
+    def test_zero_shot_marks_broad_porcelain_as_unverified(self) -> None:
+        result = self.zero_shot_builder.build_zero_shot(
+            {
+                "listings": [
+                    {
+                        "listing_id": "auctionet:4",
+                        "title": "Porcelain figure, unmarked",
+                        "risks": [],
+                        "discovery_scopes": ["broad_porcelain_category"],
+                    }
+                ]
+            },
+            {"images": [{"listing_id": "auctionet:4", "image_file": "images/4.jpg"}]},
+            deal_hash="a" * 64,
+            image_hash="b" * 64,
+        )
+
+        self.assertEqual(
+            result["records"][0]["attribution_evidence"],
+            "broad_category_requires_image_or_mark_evidence",
+        )
 
     def test_reference_image_freezer_requires_selected_known_references(self) -> None:
         class Response:

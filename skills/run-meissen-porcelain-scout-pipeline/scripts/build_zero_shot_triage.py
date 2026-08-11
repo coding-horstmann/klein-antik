@@ -10,17 +10,17 @@ from typing import Any
 
 
 OBJECT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("service_or_set", re.compile(r"\b(?:service|set|collection|parts?|pieces?|pcs?)\b", re.I)),
-    ("figurine", re.compile(r"\b(?:figurine|figure|figural|statue)\b", re.I)),
+    ("service_or_set", re.compile(r"\b(?:service|set|collection|parts?|pieces?|pcs?|servis)\b", re.I)),
+    ("figurine", re.compile(r"\b(?:figurine|figure|figural|statue|figur|skulptur)\b", re.I)),
     ("wall_bracket", re.compile(r"\bwall bracket\b", re.I)),
     ("candlestick", re.compile(r"\b(?:candlestick|candleholder)\b", re.I)),
     ("teapot_or_coffee_pot", re.compile(r"\b(?:teapot|coffee pot|tea pot)\b", re.I)),
     ("cup_and_saucer", re.compile(r"\b(?:cup with saucer|cup and saucer|mocha cup)\b", re.I)),
-    ("vase", re.compile(r"\b(?:vase|beaker)\b", re.I)),
+    ("vase", re.compile(r"\b(?:vase|beaker|vas)\b", re.I)),
     ("box", re.compile(r"\b(?:lidded box|box)\b", re.I)),
     ("tile_or_plaque", re.compile(r"\b(?:tile|portrait|plaque)\b", re.I)),
     ("ashtray", re.compile(r"\bashtray\b", re.I)),
-    ("plate_or_dish", re.compile(r"\b(?:plate|dish|platter|bowl|cake plate)\b", re.I)),
+    ("plate_or_dish", re.compile(r"\b(?:plate|dish|platter|bowl|cake plate|teller|schale)\b", re.I)),
 )
 QUALITY_PATTERN = re.compile(
     r"\b(?:second|2nd|third|3rd|fourth|4th)"
@@ -39,6 +39,7 @@ UNVERIFIED_MAKER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("maker_unverified_somag", re.compile(r"\bsomag\s+meissen\b", re.I)),
 )
 PIECE_COUNT_PATTERN = re.compile(r"\b(\d{1,3})\s*(?:pcs?\.?|pieces?|parts?)\b", re.I)
+MEISSEN_TITLE_PATTERN = re.compile(r"\bmeiss(?:en|ner)\b", re.I)
 
 
 def parse_args() -> argparse.Namespace:
@@ -97,6 +98,15 @@ def screening_status(risks: list[str]) -> str:
     return "manual_object_review_required"
 
 
+def attribution_evidence(listing: dict[str, Any], title: str) -> str:
+    if MEISSEN_TITLE_PATTERN.search(title):
+        return "title_claim"
+    scopes = {str(value) for value in listing.get("discovery_scopes", [])}
+    if "broad_porcelain_category" in scopes:
+        return "broad_category_requires_image_or_mark_evidence"
+    return "requires_image_or_mark_evidence"
+
+
 def build_zero_shot(
     deals: dict[str, Any], image_manifest: dict[str, Any], *, deal_hash: str, image_hash: str
 ) -> dict[str, Any]:
@@ -128,6 +138,7 @@ def build_zero_shot(
                 "risks": risks,
                 "image_evidence_frozen": listing_id in image_ids,
                 "classification_evidence": ["title", "contact_sheet"],
+                "attribution_evidence": attribution_evidence(listing, title),
                 "screening_status": screening_status(risks),
                 "requires_individual_image_review": True,
                 "uses_reference_prices": False,

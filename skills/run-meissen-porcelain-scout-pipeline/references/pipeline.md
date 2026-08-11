@@ -54,10 +54,10 @@ The profile labels only clear object-type signals. It deliberately leaves unsupp
 
 Freeze deal collection separately as `deal-listings.json`. A real deal collection must run through a reviewed Railway collector that supports the selected source and porcelain search. Do not call Klein-Antik's existing `/api/deals/runs/start` route; it is designed for eBay active listings.
 
-The first enabled collector is Auctionet only. It searches the active porcelain category for `Meissen`, freezes the result records and HTML hashes, and leaves style, reproduction, Dresden, and Saxony references in the audit batch with a risk flag. Run it through Railway:
+The first enabled collector is Auctionet only. It may combine explicit Meissen searches with a bounded scan of the active porcelain category. The broad category slice is discovery evidence only: an item without a Meissen title claim needs image or mark evidence before any reference pass. The collector freezes each result, the discovery query or category scope, and HTML hashes. It leaves style, reproduction, Dresden, and Saxony references in the audit batch with a risk flag. Run it through Railway:
 
 ```powershell
-railway run --project 149b9ccc-711a-47c2-b75b-c5c0e609f208 --environment 4092832c-8c44-44e4-85a2-afadf3367c61 --service fbff031a-69c7-4335-b12a-55cd25cfca95 --no-local -- .\.venv\Scripts\python.exe skills/run-meissen-porcelain-scout-pipeline/scripts/collect_auctionet_deals.py --output runs/meissen-scout/<run-id>/deal-listings.json --max-pages 2 --limit 96 --run-id <run-id>
+railway run --project 149b9ccc-711a-47c2-b75b-c5c0e609f208 --environment 4092832c-8c44-44e4-85a2-afadf3367c61 --service fbff031a-69c7-4335-b12a-55cd25cfca95 --no-local -- .\.venv\Scripts\python.exe skills/run-meissen-porcelain-scout-pipeline/scripts/collect_auctionet_deals.py --output runs/meissen-scout/<run-id>/deal-listings.json --query Meissen --query "Meissner porcelain" --query "porcelain figurine" --query "porcelain vase" --query "porcelain plate" --include-broad-category --max-pages 2 --limit 96 --run-id <run-id>
 ```
 
 The collector must not be used for candidates until its frozen batch has been reviewed. It is deliberately independent from the existing furniture collectors.
@@ -130,6 +130,8 @@ Use `unknown` rather than guessing. A group is exact only when object type and p
       "price_eur": "120.00",
       "fx_rate": "1.0",
       "sale_mode": "auction",
+      "discovery_queries": ["Meissen", "porcelain figurine"],
+      "discovery_scopes": ["explicit_query"],
       "auction_end": "2026-08-15T18:00:00Z",
       "collected_at": "2026-08-11T12:00:00Z"
     }

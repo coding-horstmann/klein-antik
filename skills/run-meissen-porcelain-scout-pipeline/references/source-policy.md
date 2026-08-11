@@ -14,6 +14,8 @@ Reject a batch if any source name, URL host, redirect target, command, or metada
 
 ## Source Matrix
 
+For Auctionet, the enabled pilot may combine repeatable explicit Meissen queries with a bounded broad porcelain-category slice. Broad-category hits remain unverified until a title, image, or mark provides attribution evidence.
+
 Only Auctionet is enabled for the first Meißen porcelain pilot. Every other source below remains disabled until its own Railway pilot has met the source-expansion gate.
 
 ### Enabled

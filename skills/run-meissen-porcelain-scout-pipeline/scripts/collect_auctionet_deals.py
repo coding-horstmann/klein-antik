@@ -23,6 +23,7 @@ ECB_RATES_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
 PAGE_SIZE = 48
 USER_AGENT = "KleinAntikMeissenScout/1.0 (auditable research collector)"
 FORBIDDEN_MARKERS = ("ebay", "serpapi")
+DEFAULT_DISCOVERY_QUERY = "Meissen"
 RISK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("meissen_style", re.compile(r"\bmeissen[- ]?(?:style|like)\b", re.I)),
     ("after_meissen", re.compile(r"\bafter meissen\b", re.I)),
@@ -42,10 +43,19 @@ RISK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Freeze current Auctionet Meissen porcelain listings for review."
+        description="Freeze active Auctionet porcelain listings for a Meissen review."
     )
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--query", default="Meissen")
+    parser.add_argument(
+        "--query",
+        action="append",
+        help="Repeatable explicit discovery query. Defaults to Meissen.",
+    )
+    parser.add_argument(
+        "--include-broad-category",
+        action="store_true",
+        help="Also freeze the active porcelain category without a manufacturer query.",
+    )
     parser.add_argument("--max-pages", type=int, default=1)
     parser.add_argument("--limit", type=int, default=48)
     parser.add_argument("--run-id")
@@ -166,7 +176,11 @@ def price_in_eur(
 
 
 def listing_from_item(
-    item: dict[str, Any], *, collected_at: str, rates: dict[str, Decimal]
+    item: dict[str, Any],
+    *,
+    collected_at: str,
+    rates: dict[str, Decimal],
+    discovery_query: str | None,
 ) -> dict[str, Any] | None:
     external_id = str(item.get("id") or item.get("auctionId") or "").strip()
     title = html.unescape(str(item.get("shortTitle") or "")).strip()
@@ -180,6 +194,7 @@ def listing_from_item(
         currency = source_currency
     price_eur, fx_rate = price_in_eur(price_value, currency, rates)
     risks = title_risks(title)
+    discovery_scope = "broad_porcelain_category" if discovery_query is None else "explicit_query"
     return {
         "listing_id": f"{SOURCE}:{external_id}",
         "source": SOURCE,
@@ -200,6 +215,8 @@ def listing_from_item(
         "estimate_raw": str(item.get("amountTitle") or "").strip() or None,
         "attribution_status": "risk" if risks else "title_claim",
         "risks": risks,
+        "discovery_queries": [discovery_query] if discovery_query else [],
+        "discovery_scopes": [discovery_scope],
         "collected_at": collected_at,
     }
 
@@ -207,7 +224,7 @@ def listing_from_item(
 def collect_active_listings(
     session: requests.Session,
     *,
-    query: str,
+    query: str | None,
     max_pages: int,
     limit: int,
     collected_at: str,
@@ -219,7 +236,7 @@ def collect_active_listings(
     for page in range(1, max_pages + 1):
         response = session.get(
             SEARCH_URL,
-            params={"q": query, "page": page},
+            params={"page": page, **({"q": query} if query else {})},
             headers={"User-Agent": USER_AGENT},
             timeout=30,
         )
@@ -229,6 +246,8 @@ def collect_active_listings(
             {
                 "page": page,
                 "url": SEARCH_URL,
+                "query": query,
+                "scope": "broad_porcelain_category" if query is None else "explicit_query",
                 "item_count": len(items),
                 "html_sha256": hashlib.sha256(response.content).hexdigest(),
             }
@@ -251,7 +270,12 @@ def collect_active_listings(
     listings: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     for item in raw_items:
-        listing = listing_from_item(item, collected_at=collected_at, rates=rates)
+        listing = listing_from_item(
+            item,
+            collected_at=collected_at,
+            rates=rates,
+            discovery_query=query,
+        )
         if listing is None or listing["listing_id"] in seen_ids:
             continue
         seen_ids.add(str(listing["listing_id"]))
@@ -259,6 +283,67 @@ def collect_active_listings(
         if len(listings) >= limit:
             break
     return listings, page_snapshots
+
+
+def normalize_discovery_queries(
+    queries: list[str] | None, *, include_broad_category: bool
+) -> list[str | None]:
+    normalized: list[str | None] = []
+    seen: set[str] = set()
+    for query in queries or [DEFAULT_DISCOVERY_QUERY]:
+        value = query.strip()
+        if not value:
+            continue
+        key = value.casefold()
+        if key not in seen:
+            seen.add(key)
+            normalized.append(value)
+    if include_broad_category:
+        normalized.append(None)
+    if not normalized:
+        raise ValueError("At least one explicit query or --include-broad-category is required")
+    return normalized
+
+
+def collect_discovery_listings(
+    session: requests.Session,
+    *,
+    queries: list[str | None],
+    max_pages: int,
+    limit: int,
+    collected_at: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Collect each frozen discovery slice and merge duplicate Auctionet lots."""
+    merged: dict[str, dict[str, Any]] = {}
+    all_pages: list[dict[str, Any]] = []
+    for query in queries:
+        listings, pages = collect_active_listings(
+            session,
+            query=query,
+            max_pages=max_pages,
+            limit=limit,
+            collected_at=collected_at,
+        )
+        all_pages.extend(pages)
+        for listing in listings:
+            existing = merged.get(str(listing["listing_id"]))
+            if existing is None:
+                merged[str(listing["listing_id"])] = listing
+                continue
+            existing["discovery_queries"] = sorted(
+                {
+                    *[str(value) for value in existing.get("discovery_queries", []) if value],
+                    *[str(value) for value in listing.get("discovery_queries", []) if value],
+                },
+                key=str.casefold,
+            )
+            existing["discovery_scopes"] = sorted(
+                {
+                    *[str(value) for value in existing.get("discovery_scopes", []) if value],
+                    *[str(value) for value in listing.get("discovery_scopes", []) if value],
+                }
+            )
+    return list(merged.values()), all_pages
 
 
 def assert_permitted(payload: dict[str, Any]) -> None:
@@ -269,7 +354,12 @@ def assert_permitted(payload: dict[str, Any]) -> None:
 
 
 def build_payload(
-    *, run_id: str, query: str, collected_at: str, listings: list[dict[str, Any]], pages: list[dict[str, Any]]
+    *,
+    run_id: str,
+    queries: list[str | None],
+    collected_at: str,
+    listings: list[dict[str, Any]],
+    pages: list[dict[str, Any]],
 ) -> dict[str, Any]:
     currency_counts = Counter(str(listing.get("currency") or "unknown") for listing in listings)
     risk_counts = Counter(risk for listing in listings for risk in listing["risks"])
@@ -278,7 +368,14 @@ def build_payload(
             "run_id": run_id,
             "collected_at": collected_at,
             "sources": [SOURCE],
-            "query": query,
+            "query": next((query for query in queries if query), None),
+            "discovery": [
+                {
+                    "scope": "broad_porcelain_category" if query is None else "explicit_query",
+                    "query": query,
+                }
+                for query in queries
+            ],
             "forbidden_sources_checked": True,
             "pages": pages,
             "currency_counts": dict(sorted(currency_counts.items())),
@@ -300,16 +397,20 @@ def main() -> int:
     run_id = args.run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     collected_at = utc_now()
     session = requests.Session()
-    listings, pages = collect_active_listings(
+    queries = normalize_discovery_queries(
+        args.query,
+        include_broad_category=args.include_broad_category,
+    )
+    listings, pages = collect_discovery_listings(
         session,
-        query=args.query,
+        queries=queries,
         max_pages=args.max_pages,
         limit=args.limit,
         collected_at=collected_at,
     )
     payload = build_payload(
         run_id=run_id,
-        query=args.query,
+        queries=queries,
         collected_at=collected_at,
         listings=listings,
         pages=pages,
@@ -322,6 +423,7 @@ def main() -> int:
                 "run_id": run_id,
                 "listing_count": len(listings),
                 "pages_fetched": len(pages),
+                "discovery": payload["run"]["discovery"],
                 "currency_counts": payload["run"]["currency_counts"],
                 "risk_counts": payload["run"]["risk_counts"],
                 "output": str(args.output),
