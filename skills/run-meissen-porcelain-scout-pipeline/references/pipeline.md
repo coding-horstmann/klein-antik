@@ -62,6 +62,26 @@ railway run --project 149b9ccc-711a-47c2-b75b-c5c0e609f208 --environment 4092832
 
 The collector must not be used for candidates until its frozen batch has been reviewed. It is deliberately independent from the existing furniture collectors.
 
+Before a zero-shot review, freeze one primary listing image and create contact sheets through Railway. This is evidence preservation, not a new marketplace search:
+
+```powershell
+railway run --project 149b9ccc-711a-47c2-b75b-c5c0e609f208 --environment 4092832c-8c44-44e4-85a2-afadf3367c61 --service fbff031a-69c7-4335-b12a-55cd25cfca95 --no-local -- .\.venv\Scripts\python.exe skills/run-meissen-porcelain-scout-pipeline/scripts/freeze_listing_images.py --deals runs/meissen-scout/<run-id>/deal-listings.json --output runs/meissen-scout/<run-id>/image-manifest.json --image-dir runs/meissen-scout/<run-id>/images --contact-sheet-dir runs/meissen-scout/<run-id>/contact-sheets
+```
+
+The contact sheets are for broad object triage only. Inspect individual frozen images before treating any model, mark, decor, dimensions, condition, or attribution detail as evidence.
+
+Create the zero-shot file before loading `reference-corpus.json` or `reference-profile.json`. The triage script deliberately does not read price fields and does not create priorities:
+
+```powershell
+python skills/run-meissen-porcelain-scout-pipeline/scripts/build_zero_shot_triage.py --deals runs/meissen-scout/<run-id>/deal-listings.json --images runs/meissen-scout/<run-id>/image-manifest.json --output runs/meissen-scout/<run-id>/zero-shot.json
+```
+
+For an explicitly selected, high-signal reference pool, freeze its images through Railway before deciding that a visual comparable is exact:
+
+```powershell
+railway run --project 149b9ccc-711a-47c2-b75b-c5c0e609f208 --environment 4092832c-8c44-44e4-85a2-afadf3367c61 --service fbff031a-69c7-4335-b12a-55cd25cfca95 --no-local -- .\.venv\Scripts\python.exe skills/run-meissen-porcelain-scout-pipeline/scripts/freeze_selected_reference_images.py --references runs/meissen-scout/<run-id>/reference-corpus.json --output runs/meissen-scout/<run-id>/reference-image-manifest.json --image-dir runs/meissen-scout/<run-id>/reference-images --reference-id auctionet:<id>
+```
+
 ## Reference Profile
 
 Classify references into structured fields before price comparison:

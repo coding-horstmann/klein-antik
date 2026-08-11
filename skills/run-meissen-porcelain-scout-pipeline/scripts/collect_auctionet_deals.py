@@ -26,11 +26,16 @@ FORBIDDEN_MARKERS = ("ebay", "serpapi")
 RISK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("meissen_style", re.compile(r"\bmeissen[- ]?(?:style|like)\b", re.I)),
     ("after_meissen", re.compile(r"\bafter meissen\b", re.I)),
-    ("dresden_or_saxony", re.compile(r"\b(?:dresden|saxony|sachsen)\b", re.I)),
+    ("dresden_or_saxony", re.compile(r"\b(?:dresden|saxony)\b", re.I)),
     ("reproduction", re.compile(r"\b(?:reproduction|repro|replica|copy)\b", re.I)),
     (
         "quality_or_seconds",
-        re.compile(r"\b(?:second|2nd|third|3rd)\s+(?:quality|choice|wahl)\b", re.I),
+        re.compile(
+            r"\b(?:second|2nd|third|3rd|fourth|4th)"
+            r"(?:\s*(?:/|and)\s*(?:second|2nd|third|3rd|fourth|4th))*"
+            r"\s+(?:quality|choice|wahl)\b",
+            re.I,
+        ),
     ),
 )
 
