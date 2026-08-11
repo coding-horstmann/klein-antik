@@ -552,6 +552,28 @@ class MeissenScoutValidatorTests(unittest.TestCase):
             "broad_category_requires_image_or_mark_evidence",
         )
 
+    def test_zero_shot_marks_implicit_meissen_signal_as_unverified(self) -> None:
+        result = self.zero_shot_builder.build_zero_shot(
+            {
+                "listings": [
+                    {
+                        "listing_id": "auctionet:6",
+                        "title": "Meissen stamp on a blue and white porcelain bowl",
+                        "risks": [],
+                        "discovery_scopes": ["implicit_meissen_signal"],
+                    }
+                ]
+            },
+            {"images": [{"listing_id": "auctionet:6", "image_file": "images/6.jpg"}]},
+            deal_hash="a" * 64,
+            image_hash="b" * 64,
+        )
+
+        self.assertEqual(
+            result["records"][0]["attribution_evidence"],
+            "broad_category_requires_image_or_mark_evidence",
+        )
+
     def test_zero_shot_uses_canonical_url_when_the_title_is_truncated(self) -> None:
         result = self.zero_shot_builder.build_zero_shot(
             {

@@ -15,6 +15,7 @@ from .market_sources import (
     MEISSEN_ARCHIVE_RESULT_LIMIT,
     MEISSEN_ARCHIVE_SOURCE,
     MEISSEN_BROAD_DISCOVERY_QUERY_IDS,
+    MEISSEN_IMPLICIT_DISCOVERY_QUERY_IDS,
     MEISSEN_PORCELAIN_PILOT_SOURCES,
     SOURCE_PAGE_SIZES,
     SOURCE_LABELS,
@@ -410,7 +411,10 @@ def process_run(
                             SOURCE_PAGE_SIZES[task["source"]]
                             * int(task["page_count"]),
                         )
-                elif task["query_id"] in MEISSEN_BROAD_DISCOVERY_QUERY_IDS:
+                elif task["query_id"] in (
+                    *MEISSEN_BROAD_DISCOVERY_QUERY_IDS,
+                    *MEISSEN_IMPLICIT_DISCOVERY_QUERY_IDS,
+                ):
                     task_result_limit = max(
                         result_limit,
                         SOURCE_PAGE_SIZES[task["source"]] * int(task["page_count"]),

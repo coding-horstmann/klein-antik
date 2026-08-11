@@ -41,6 +41,10 @@ UNVERIFIED_MAKER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 PIECE_COUNT_PATTERN = re.compile(r"\b(\d{1,3})\s*(?:pcs?\.?|pieces?|parts?|kpl|st)\b", re.I)
 MEISSEN_TITLE_PATTERN = re.compile(r"\bmeiss(?:en|ner)\b", re.I)
+UNVERIFIED_DISCOVERY_SCOPES = {
+    "broad_porcelain_category",
+    "implicit_meissen_signal",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -100,13 +104,13 @@ def screening_status(risks: list[str]) -> str:
 
 
 def attribution_evidence(listing: dict[str, Any], title: str) -> str:
+    scopes = {str(value) for value in listing.get("discovery_scopes", [])}
+    if "explicit_query" not in scopes and scopes & UNVERIFIED_DISCOVERY_SCOPES:
+        return "broad_category_requires_image_or_mark_evidence"
     if MEISSEN_TITLE_PATTERN.search(title):
         return "title_claim"
     if MEISSEN_TITLE_PATTERN.search(str(listing.get("url") or "")):
         return "canonical_url_claim"
-    scopes = {str(value) for value in listing.get("discovery_scopes", [])}
-    if "broad_porcelain_category" in scopes:
-        return "broad_category_requires_image_or_mark_evidence"
     return "requires_image_or_mark_evidence"
 
 

@@ -13,6 +13,8 @@ from klein_antik.market_sources import (
     MEISSEN_ARCHIVE_START_PAGE,
     MEISSEN_ARCHIVE_TARGET_PAGE,
     MEISSEN_BROAD_DISCOVERY_QUERIES,
+    MEISSEN_IMPLICIT_DISCOVERY_QUERIES,
+    MEISSEN_IMPLICIT_MARKETPLACE_DISCOVERY_TASKS,
     MEISSEN_MARKETPLACE_DISCOVERY_TASKS,
     MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES,
     MEISSEN_PORCELAIN_BACKFILL_SOURCES,
@@ -93,9 +95,9 @@ class MarketSourceTests(unittest.TestCase):
             {(source, query) for _query_id, source, query in MEISSEN_BROAD_DISCOVERY_QUERIES},
             {
                 ("blocket", "porslin"),
-                ("blocket", "lokmonster"),
+                ("blocket", "lökmönster"),
                 ("dba", "porcelaen"),
-                ("dba", "logmonster"),
+                ("dba", "løgmönster"),
                 ("tori", "posliini"),
                 ("tori", "sipulikoriste"),
             },
@@ -105,6 +107,17 @@ class MarketSourceTests(unittest.TestCase):
                 ["meissen", "meissen-broad-tori-posliini", "meissen"]
             ),
             ["explicit_query", "broad_porcelain_category"],
+        )
+        self.assertEqual(len(MEISSEN_IMPLICIT_DISCOVERY_QUERIES), 9)
+        self.assertEqual(len(MEISSEN_IMPLICIT_MARKETPLACE_DISCOVERY_TASKS), 9)
+        self.assertTrue(
+            all(task[3] == "implicit_meissen_signal" for task in MEISSEN_IMPLICIT_MARKETPLACE_DISCOVERY_TASKS)
+        )
+        self.assertEqual(search_query_for("lökmönster"), "lökmönster")
+        self.assertEqual(search_query_for("krydsede sværd"), "krydsede sværd")
+        self.assertEqual(
+            marketplace_discovery_scopes(["meissen-implicit-tori-sipulikuvio"]),
+            ["implicit_meissen_signal"],
         )
 
     def test_money_formats(self) -> None:

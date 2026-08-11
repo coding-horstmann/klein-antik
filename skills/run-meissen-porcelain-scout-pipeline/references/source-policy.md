@@ -18,6 +18,8 @@ For Auctionet, the enabled pilot may combine repeatable explicit Meissen queries
 
 Auctionet remains the initial auction source. Blocket, DBA and Tori passed a bounded Railway source pilot on 2026-08-11 for explicit `Meissen` discovery: each produced active canonical offers with stable item IDs, images, prices and source currency. They are enabled only for frozen, manual-review deal batches; no source is part of a recurring scan yet. A separate six-query Railway pilot may search broad source-language porcelain and onion-pattern terms. Those records are explicitly marked `broad_porcelain_category` and require image or mark evidence before any Meissen valuation.
 
+The first broad-category batch was intentionally noisy. A separate, equally bounded pilot may instead use decor and mark signals. These records are marked `implicit_meissen_signal`; neither a seller claim about a stamp nor a blue-and-white decor is enough for price comparison without image or mark evidence.
+
 ### Enabled
 
 - Auctionet: active porcelain category with a dedicated Meißen query; frozen batch only, no publishing.
@@ -50,6 +52,9 @@ Use source-language variants where supported:
 - `porslin` and `lokmonster` on Blocket
 - `porcelaen` and `logmonster` on DBA
 - `posliini` and `sipulikoriste` on Tori
+- `lökmönster`, `Meissen stämpel`, and `korslagda svärd` on Blocket
+- `løgmönster`, `Meissen stempel`, and `krydsede sværd` on DBA
+- `sipulikuvio`, `Meissen leima`, and `ristimiekat` on Tori
 
 Also inspect broad porcelain, ceramics, tableware, figurine, vase, service, cup, plate, and decorative-object categories. Broad discovery is important because private sellers may omit the manufacturer. It does not lower the evidence standard: a broad-category item becomes a candidate only after Meissen attribution evidence is found.
 

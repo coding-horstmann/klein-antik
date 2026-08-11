@@ -24,6 +24,8 @@ from .market_sources import (
     MEISSEN_BROAD_DISCOVERY_QUERIES,
     MEISSEN_BROAD_DISCOVERY_QUERY_IDS,
     MEISSEN_DEAL_PILOT_SOURCES,
+    MEISSEN_IMPLICIT_DISCOVERY_QUERIES,
+    MEISSEN_IMPLICIT_MARKETPLACE_DISCOVERY_TASKS,
     MEISSEN_MARKETPLACE_DISCOVERY_QUERY_IDS,
     MEISSEN_MARKETPLACE_DISCOVERY_TASKS,
     MEISSEN_PORCELAIN_BACKFILL_BATCH_PAGES,
@@ -1716,6 +1718,94 @@ def create_app() -> Flask:
                 "queries": [
                     {"source": source, "query": query_text, "scope": scope}
                     for _query_id, source, query_text, scope in MEISSEN_MARKETPLACE_DISCOVERY_TASKS
+                ],
+            }
+        ), 201
+
+    @app.post("/api/runs/meissen-implicit-marketplace-pilot")
+    @json_endpoint
+    def start_meissen_implicit_marketplace_pilot() -> Any:
+        """Freeze a bounded marketplace batch for decor and mark signal terms."""
+        with connection() as conn:
+            worker = conn.execute(
+                """
+                SELECT last_seen_at > now() - interval '90 seconds' AS online
+                FROM worker_status
+                WHERE name = 'market-importer'
+                """
+            ).fetchone()
+            if not worker or not worker["online"]:
+                return jsonify({"error": "Der Marktpreis-Importer ist nicht erreichbar."}), 409
+
+            active = conn.execute(
+                """
+                SELECT id
+                FROM market_runs
+                WHERE status IN ('queued', 'running', 'cancel_requested')
+                LIMIT 1
+                """
+            ).fetchone()
+            if active:
+                return jsonify({"error": f"Lauf {active['id']} ist bereits aktiv."}), 409
+
+            for position, (query_id, _source, query_text) in enumerate(
+                MEISSEN_IMPLICIT_DISCOVERY_QUERIES, start=1101
+            ):
+                conn.execute(
+                    """
+                    INSERT INTO search_queries (
+                        id, category, category_label, position, query_text,
+                        ebay_domain, enabled, review_status, note
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, FALSE, 'unreviewed', %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        category = EXCLUDED.category,
+                        category_label = EXCLUDED.category_label,
+                        query_text = EXCLUDED.query_text,
+                        ebay_domain = EXCLUDED.ebay_domain,
+                        enabled = FALSE,
+                        note = EXCLUDED.note,
+                        updated_at = now()
+                    """,
+                    (
+                        query_id,
+                        "meissen_porcelain_discovery",
+                        "Meissen-Porzellan - indirekte Signale",
+                        position,
+                        query_text,
+                        "marketplace",
+                        "Nur Railway-Discovery; Bild- oder Markenpruefung erforderlich.",
+                    ),
+                )
+
+            run = conn.execute(
+                """
+                INSERT INTO market_runs (kind, planned_tasks)
+                VALUES ('source_pilot', %s)
+                RETURNING id
+                """,
+                (len(MEISSEN_IMPLICIT_MARKETPLACE_DISCOVERY_TASKS),),
+            ).fetchone()
+            for query_id, source, _query_text, _scope in MEISSEN_IMPLICIT_MARKETPLACE_DISCOVERY_TASKS:
+                conn.execute(
+                    """
+                    INSERT INTO market_run_tasks (
+                        run_id, query_id, source, start_page, page_count
+                    )
+                    VALUES (%s, %s, %s, 1, 1)
+                    """,
+                    (run["id"], query_id, source),
+                )
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run["id"],
+                "kind": "source_pilot",
+                "planned_queries": len(MEISSEN_IMPLICIT_DISCOVERY_QUERIES),
+                "planned_tasks": len(MEISSEN_IMPLICIT_MARKETPLACE_DISCOVERY_TASKS),
+                "queries": [
+                    {"source": source, "query": query_text, "scope": scope}
+                    for _query_id, source, query_text, scope in MEISSEN_IMPLICIT_MARKETPLACE_DISCOVERY_TASKS
                 ],
             }
         ), 201

@@ -106,18 +106,33 @@ MEISSEN_DEAL_PILOT_SOURCES = ("blocket", "dba", "tori")
 # record from this matrix remains unverified until a later image or mark review.
 MEISSEN_BROAD_DISCOVERY_QUERIES = (
     ("meissen-broad-blocket-porslin", "blocket", "porslin"),
-    ("meissen-broad-blocket-lokmonster", "blocket", "lokmonster"),
+    ("meissen-broad-blocket-lokmonster", "blocket", "lökmönster"),
     ("meissen-broad-dba-porcelaen", "dba", "porcelaen"),
-    ("meissen-broad-dba-logmonster", "dba", "logmonster"),
+    ("meissen-broad-dba-logmonster", "dba", "løgmönster"),
     ("meissen-broad-tori-posliini", "tori", "posliini"),
     ("meissen-broad-tori-sipulikoriste", "tori", "sipulikoriste"),
 )
 MEISSEN_BROAD_DISCOVERY_QUERY_IDS = tuple(
     query_id for query_id, _source, _query in MEISSEN_BROAD_DISCOVERY_QUERIES
 )
+MEISSEN_IMPLICIT_DISCOVERY_QUERIES = (
+    ("meissen-implicit-blocket-lokmonster", "blocket", "lökmönster"),
+    ("meissen-implicit-blocket-stampel", "blocket", "Meissen stämpel"),
+    ("meissen-implicit-blocket-svard", "blocket", "korslagda svärd"),
+    ("meissen-implicit-dba-logmonster", "dba", "løgmönster"),
+    ("meissen-implicit-dba-stempel", "dba", "Meissen stempel"),
+    ("meissen-implicit-dba-svaerd", "dba", "krydsede sværd"),
+    ("meissen-implicit-tori-sipulikuvio", "tori", "sipulikuvio"),
+    ("meissen-implicit-tori-leima", "tori", "Meissen leima"),
+    ("meissen-implicit-tori-ristimiekat", "tori", "ristimiekat"),
+)
+MEISSEN_IMPLICIT_DISCOVERY_QUERY_IDS = tuple(
+    query_id for query_id, _source, _query in MEISSEN_IMPLICIT_DISCOVERY_QUERIES
+)
 MEISSEN_MARKETPLACE_DISCOVERY_QUERY_IDS = (
     MEISSEN_ARCHIVE_QUERY_ID,
     *MEISSEN_BROAD_DISCOVERY_QUERY_IDS,
+    *MEISSEN_IMPLICIT_DISCOVERY_QUERY_IDS,
 )
 MEISSEN_MARKETPLACE_DISCOVERY_TASKS = (
     *((MEISSEN_ARCHIVE_QUERY_ID, source, "Meissen", "explicit_query") for source in MEISSEN_DEAL_PILOT_SOURCES),
@@ -126,6 +141,10 @@ MEISSEN_MARKETPLACE_DISCOVERY_TASKS = (
         for query_id, source, query in MEISSEN_BROAD_DISCOVERY_QUERIES
     ),
 )
+MEISSEN_IMPLICIT_MARKETPLACE_DISCOVERY_TASKS = tuple(
+    (query_id, source, query, "implicit_meissen_signal")
+    for query_id, source, query in MEISSEN_IMPLICIT_DISCOVERY_QUERIES
+)
 
 
 def marketplace_discovery_scopes(query_ids: list[str] | tuple[str, ...]) -> list[str]:
@@ -133,7 +152,11 @@ def marketplace_discovery_scopes(query_ids: list[str] | tuple[str, ...]) -> list
     scopes = [
         "broad_porcelain_category"
         if query_id in MEISSEN_BROAD_DISCOVERY_QUERY_IDS
-        else "explicit_query"
+        else (
+            "implicit_meissen_signal"
+            if query_id in MEISSEN_IMPLICIT_DISCOVERY_QUERY_IDS
+            else "explicit_query"
+        )
         for query_id in query_ids
     ]
     return list(dict.fromkeys(scopes))
@@ -1359,6 +1382,11 @@ SEARCH_QUERY_OVERRIDES = {
     "bing grondahl figur": "Bing Grondahl",
     "hagenauer wien figur": "Hagenauer",
     "gunnar cyren designobjekt": "Gunnar Cyren",
+    "lokmonster": "lökmönster",
+    "logmonster": "løgmönster",
+    "korslagda svard": "korslagda svärd",
+    "meissen stampel": "Meissen stämpel",
+    "krydsede svaerd": "krydsede sværd",
 }
 
 RELEVANCE_ANCHOR_OVERRIDES = {
